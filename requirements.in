@@ -1,0 +1,4 @@
+# Runtime dependencies of the agent (GitHub Actions). Compile the lock file with:
+#   pip-compile --generate-hashes --strip-extras requirements.in
+anthropic==2.14.0
+cryptography==50.0.2

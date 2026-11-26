@@ -1,0 +1,167 @@
+"""Thin Gmail REST client: token refresh, quota pacing, and the few calls we need."""
+
+from __future__ import annotations
+
+import os
+import re
+import threading
+import time
+import urllib.parse
+from typing import Any, Iterable
+
+from . import http
+
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+API = "https://gmail.googleapis.com/gmail/v1/users/me"
+MESSAGE_ID_RE = re.compile(r"^[0-9A-Za-z]{6,64}$")
+BATCH_MODIFY_LIMIT = 1000  # Gmail's documented maximum ids per batchModify call
+
+# Quota units per method (Gmail API reference, "Per-method quota usage").
+COST = {"get": 5, "list": 5, "batchModify": 50, "trash": 5, "labels.list": 1, "labels.create": 5, "profile": 1}
+
+
+class AuthError(Exception):
+    """The refresh token no longer works; the user must re-run setup_oauth.py."""
+
+
+class QuotaPacer:
+    """Token bucket that keeps one mailbox under its per-user quota.
+
+    Google lists 6,000 quota units per user per minute (100/s). We pace at 80/s
+    to leave headroom for retries; parallel fetch threads share one bucket.
+    """
+
+    def __init__(self, units_per_second: float = 80.0, clock=time.monotonic, sleep=time.sleep):
+        self.rate = units_per_second
+        self.capacity = units_per_second
+        self.tokens = units_per_second
+        self.clock = clock
+        self.sleep = sleep
+        self.last = clock()
+        self.lock = threading.Lock()
+
+    def take(self, units: int) -> None:
+        while True:
+            with self.lock:
+                now = self.clock()
+                self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
+                self.last = now
+                if self.tokens >= units:
+                    self.tokens -= units
+                    return
+                wait = (units - self.tokens) / self.rate
+            self.sleep(wait)
+
+
+def mask_in_actions_log(secret: str) -> None:
+    """Ask GitHub Actions to hide a value derived at runtime (access tokens are not secrets)."""
+    if secret and os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::add-mask::{secret}", flush=True)
+
+
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
+    try:
+        resp = http.request(
+            "POST",
+            TOKEN_URL,
+            form={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            retries=3,
+        )
+    except http.HttpError as exc:
+        if exc.status in (400, 401) and exc.reason in ("invalid_grant", "unauthorized_client", "invalid_client"):
+            raise AuthError(
+                f"Google refused the saved sign-in ({exc.reason}). Run scripts/setup_oauth.py again "
+                "for this account and update the MAILEAN_ACCOUNTS secret. If this keeps happening "
+                "every 7 days, set the OAuth app's publishing status to 'In production'."
+            ) from None
+        raise
+    token = resp.json().get("access_token", "")
+    if not token:
+        raise AuthError("Google returned no access token. Run scripts/setup_oauth.py again.")
+    mask_in_actions_log(token)
+    return token
+
+
+class Gmail:
+    def __init__(self, access_token: str, pacer: QuotaPacer | None = None):
+        self.headers = {"Authorization": f"Bearer {access_token}"}
+        self.pacer = pacer or QuotaPacer()
+
+    def _call(self, method: str, path: str, cost_key: str, **kwargs: Any) -> dict:
+        self.pacer.take(COST[cost_key])
+        return http.request(method, f"{API}{path}", headers=self.headers, **kwargs).json()
+
+    def profile(self) -> dict:
+        return self._call("GET", "/profile", "profile")
+
+    def list_message_ids(self, query: str, limit: int) -> list[tuple[str, str]]:
+        """Return up to `limit` (message_id, thread_id) pairs, newest first."""
+        found: list[tuple[str, str]] = []
+        page_token = ""
+        while len(found) < limit:
+            params = {"q": query, "maxResults": str(min(500, limit - len(found)))}
+            if page_token:
+                params["pageToken"] = page_token
+            data = self._call("GET", "/messages?" + urllib.parse.urlencode(params), "list")
+            for item in data.get("messages", []) or []:
+                mid, tid = str(item.get("id", "")), str(item.get("threadId", ""))
+                if MESSAGE_ID_RE.match(mid) and MESSAGE_ID_RE.match(tid):
+                    found.append((mid, tid))
+            page_token = data.get("nextPageToken", "")
+            if not page_token:
+                break
+        return found[:limit]
+
+    def get_metadata(self, message_id: str, extra_headers: Iterable[str] = ()) -> dict:
+        if not MESSAGE_ID_RE.match(message_id):
+            raise ValueError("invalid message id")
+        names = ["From", "Subject", "Date", "List-Unsubscribe", "List-Unsubscribe-Post", *extra_headers]
+        query = urllib.parse.urlencode([("format", "metadata")] + [("metadataHeaders", n) for n in names])
+        return self._call("GET", f"/messages/{message_id}?{query}", "get")
+
+    def batch_modify(self, ids: list[str], add: list[str] | None = None, remove: list[str] | None = None) -> int:
+        done = 0
+        for start in range(0, len(ids), BATCH_MODIFY_LIMIT):
+            chunk = ids[start : start + BATCH_MODIFY_LIMIT]
+            body = {"ids": chunk, "addLabelIds": add or [], "removeLabelIds": remove or []}
+            self._call("POST", "/messages/batchModify", "batchModify", json_body=body)
+            done += len(chunk)
+        return done
+
+    def trash(self, message_id: str) -> None:
+        if not MESSAGE_ID_RE.match(message_id):
+            raise ValueError("invalid message id")
+        self._call("POST", f"/messages/{message_id}/trash", "trash", json_body={})
+
+    def labels(self) -> dict[str, str]:
+        """Map lower-cased label name -> label id."""
+        data = self._call("GET", "/labels", "labels.list")
+        return {str(l.get("name", "")).lower(): str(l.get("id", "")) for l in data.get("labels", []) or []}
+
+    def ensure_label(self, name: str, cache: dict[str, str]) -> str:
+        key = name.lower()
+        if key in cache:
+            return cache[key]
+        created = self._call(
+            "POST",
+            "/labels",
+            "labels.create",
+            json_body={"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"},
+        )
+        cache[key] = str(created.get("id", ""))
+        return cache[key]
+
+
+def headers_of(message: dict) -> dict[str, str]:
+    """Header list -> dict (first occurrence wins, names lower-cased)."""
+    result: dict[str, str] = {}
+    for h in (message.get("payload") or {}).get("headers", []) or []:
+        name = str(h.get("name", "")).lower()
+        if name and name not in result:
+            result[name] = str(h.get("value", ""))
+    return result

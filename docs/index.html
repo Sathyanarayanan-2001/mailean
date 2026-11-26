@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <!-- Only this site's own files may load; the one network peer is api.github.com. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.github.com; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Mailean: multi-account Gmail triage. Claude groups your mail; a GitHub Actions agent applies your choices.">
+  <title>Mailean</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="modulepreload" href="js/dom.js">
+  <link rel="modulepreload" href="js/format.js">
+  <link rel="modulepreload" href="js/model.js">
+  <link rel="modulepreload" href="js/commands.js">
+  <link rel="modulepreload" href="js/store.js">
+  <link rel="modulepreload" href="js/merge.js">
+  <link rel="modulepreload" href="js/sync.js">
+  <link rel="modulepreload" href="js/github.js">
+  <link rel="modulepreload" href="js/charts.js">
+  <link rel="modulepreload" href="js/csv.js">
+  <link rel="modulepreload" href="js/exporter.js">
+  <link rel="modulepreload" href="js/crypto.js">
+  <script src="theme-init.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="#/home" aria-label="Mailean home">
+      <img src="icons/favicon.svg" width="28" height="28" alt="">
+      <span>Mailean</span>
+    </a>
+    <span id="mode-chip" class="chip-mode" hidden>Demo</span>
+    <span class="spacer"></span>
+    <span id="sync-pill" class="pill" role="status" aria-live="polite">Saved on this device</span>
+    <button id="queue-btn" type="button" class="btn queue-btn" aria-label="Command queue">Queue</button>
+    <button id="theme-btn" type="button" class="icon-btn" aria-label="Switch theme"></button>
+  </header>
+  <div class="shell">
+    <nav class="sidenav" aria-label="Main">
+      <ul id="sidenav-list"></ul>
+    </nav>
+    <main id="main" tabindex="-1">
+      <div id="view">
+        <p class="boot">Loading Mailean…</p>
+      </div>
+    </main>
+  </div>
+  <nav class="bottomnav" aria-label="Main">
+    <ul id="bottomnav-list"></ul>
+  </nav>
+
+  <div id="queue" class="drawer" hidden>
+    <div id="queue-scrim" class="scrim"></div>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="queue-title">
+      <div class="drawer-head">
+        <h2 id="queue-title" tabindex="-1">Command queue</h2>
+        <button id="queue-close" type="button" class="icon-btn" aria-label="Close the queue">✕</button>
+      </div>
+      <p class="muted small drawer-note">Nothing changes in Gmail until you execute. Actions run in your private repository on GitHub.</p>
+      <div id="queue-body" class="drawer-body"></div>
+      <div id="queue-foot" class="drawer-foot" hidden>
+        <button id="queue-clear" type="button" class="btn ghost">Clear all</button>
+        <button id="queue-exec" type="button" class="btn primary lg">Execute via agent</button>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="dlg"></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <noscript><p class="boot">Mailean needs JavaScript turned on.</p></noscript>
+</body>
+</html>

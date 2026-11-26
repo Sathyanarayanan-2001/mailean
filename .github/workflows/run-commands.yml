@@ -1,0 +1,64 @@
+# Apply the actions queued on the dashboard to Gmail, write an audit record,
+# then start a fresh sync so the dashboard shows the new state.
+name: Run commands
+run-name: Mailean commands ${{ inputs.batch_id || github.event.client_payload.batch_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_id:
+        description: Batch id from the dashboard (b-YYYYMMDD-HHMMSS-xxxxxx)
+        required: true
+        type: string
+      commands_payload:
+        description: JSON payload of queued commands (written by the dashboard)
+        required: true
+        type: string
+  repository_dispatch:
+    types: [mailean-commands]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  execute:
+    if: vars.MAILEAN_ROLE == 'data'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse to run in a public repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)" != "true" ]; then
+            echo "::error::This repository is public. Mailean only runs in a private repository."
+            exit 1
+          fi
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
+      - name: Check out the state branch
+        run: python -m agent.publish checkout state
+      - name: Execute commands
+        # The payload reaches Python through an environment variable, never through
+        # the shell command line, so its text can never run as a command.
+        env:
+          COMMANDS_PAYLOAD: ${{ inputs.commands_payload || toJSON(github.event.client_payload) }}
+          MAILEAN_ACCOUNTS: ${{ secrets.MAILEAN_ACCOUNTS }}
+          MAILEAN_STATE_DIR: state
+        run: python -m agent.execute_commands
+      - name: Publish the audit record
+        if: ${{ !cancelled() }}
+        env:
+          BATCH_ID: ${{ inputs.batch_id || github.event.client_payload.batch_id }}
+        run: python -m agent.publish append state "commands ${BATCH_ID}"
+      - name: Start a fresh sync
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scheduled-triage.yml --ref "${GITHUB_REF_NAME}"

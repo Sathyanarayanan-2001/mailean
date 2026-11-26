@@ -1,0 +1,8 @@
+{
+ "enc": "mailean-aesgcm-v1",
+ "kdf": "pbkdf2-sha256",
+ "iter": 600000,
+ "salt": "AAECAwQFBgcICQoLDA0ODw==",
+ "iv": "AAECAwQFBgcICQoL",
+ "ct": "VrNmJN3hG0Va8PVu0p5b6LLi5/hu1Nq1x9MsscvIiJEE7Mv3N5DTgFcHNdA2bn0vP7azDegjw8s7"
+}

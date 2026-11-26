@@ -1,0 +1,56 @@
+# Every 4 hours: fetch inbox metadata from every Gmail account, triage it with
+# Claude, and publish the private state file to the mailean-state branch.
+name: Scheduled triage
+run-name: Mailean sync
+
+on:
+  schedule:
+    - cron: '17 */4 * * *' # minute 17 UTC avoids the busy top of the hour
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mailean-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Runs only in the private data repository: set the repository variable MAILEAN_ROLE=data there.
+    if: vars.MAILEAN_ROLE == 'data'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse to run in a public repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)" != "true" ]; then
+            echo "::error::This repository is public. Mailean stores email summaries here, so it only runs in a private repository."
+            exit 1
+          fi
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.txt
+      - name: Check out the state branch
+        run: python -m agent.publish checkout state
+      - name: Sync and triage
+        env:
+          MAILEAN_ACCOUNTS: ${{ secrets.MAILEAN_ACCOUNTS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MAILEAN_STATE_PASSPHRASE: ${{ secrets.MAILEAN_STATE_PASSPHRASE }}
+          MAILEAN_MODEL: ${{ vars.MAILEAN_MODEL }}
+          MAILEAN_QUERY: ${{ vars.MAILEAN_QUERY }}
+          MAILEAN_MAX_PER_ACCOUNT: ${{ vars.MAILEAN_MAX_PER_ACCOUNT }}
+          MAILEAN_STORE_SNIPPETS: ${{ vars.MAILEAN_STORE_SNIPPETS }}
+          MAILEAN_STATE_DIR: state
+        run: python -m agent.sync_inbox
+      - name: Publish state
+        # Publish even when an account failed, so the dashboard can show the error.
+        if: ${{ !cancelled() }}
+        run: python -m agent.publish squash state "sync $(date -u +%Y-%m-%dT%H:%MZ)"

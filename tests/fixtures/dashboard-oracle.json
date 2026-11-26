@@ -1,0 +1,60 @@
+{
+ "now": "2026-11-26T03:00:00Z",
+ "tz": "Asia/Kolkata",
+ "total": 128,
+ "unread": 68,
+ "by_group": {
+  "action_required": 24,
+  "receipts_finance": 32,
+  "awaiting_reply": 7,
+  "newsletters_reading": 22,
+  "promotions_spam": 36,
+  "low_priority": 7
+ },
+ "receipts_total_paise": 56660912,
+ "receipts_by_month": {
+  "2026-11": 15754778,
+  "2026-10": 40526284,
+  "2026-09": 379850
+ },
+ "last8_weeks": [
+  {
+   "key": "2026-W41",
+   "value": 13
+  },
+  {
+   "key": "2026-W42",
+   "value": 12
+  },
+  {
+   "key": "2026-W43",
+   "value": 12
+  },
+  {
+   "key": "2026-W44",
+   "value": 11
+  },
+  {
+   "key": "2026-W45",
+   "value": 9
+  },
+  {
+   "key": "2026-W46",
+   "value": 18
+  },
+  {
+   "key": "2026-W47",
+   "value": 13
+  },
+  {
+   "key": "2026-W48",
+   "value": 10
+  }
+ ],
+ "by_priority": {
+  "4": 24,
+  "3": 39,
+  "2": 22,
+  "1": 43
+ }
+}
