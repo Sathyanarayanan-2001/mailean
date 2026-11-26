@@ -47,7 +47,7 @@ jobs:
           python -m playwright install --with-deps chromium
           python -m pytest tests/e2e
 
-  deploy:
+  build-site:
     needs: test
     # Only the public dashboard repository deploys. The private data repository
     # sets MAILEAN_ROLE=data and never publishes a site.
@@ -56,11 +56,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      pages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,5 +70,19 @@ jobs:
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
+
+  deploy:
+    # A separate job, as in GitHub's own Pages template: the uploaded artifact
+    # was not yet listed when upload and deploy ran in one job (first deploy failed).
+    needs: build-site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

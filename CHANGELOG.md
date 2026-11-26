@@ -7,6 +7,7 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0.0 | 26/11/2026 | Sathyanarayanan, with Claude | First release. |
+| 1.0.0 (CI) | 26/11/2026 | Sathyanarayanan, with Claude | Pages build and deploy split into two jobs. |
 
 ## 1.0.0 - 26/11/2026
 
@@ -22,6 +23,9 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 - Folder sync through OneDrive with gzip save files, per-record merge and tombstones.
 - Offline support (service worker), installable manifest and icons, Content Security Policy.
 - Tests: 80 Python, 27 JavaScript, 14 browser (Playwright, axe-core); five golden examples.
+
+### Fixed after release (CI only, app unchanged)
+- The first Pages deploy failed with "No artifacts named github-pages were found": the artifact was not yet listed when upload and deploy ran in one job. Build and deploy are now separate jobs, as in GitHub's own Pages template.
 
 ### Performance (measured, see docs/QUALITY.md)
 - Classification of 600 new emails: 6.02 s down to 1.51 s with a simulated 0.25 s per API call (4 batches in parallel).
