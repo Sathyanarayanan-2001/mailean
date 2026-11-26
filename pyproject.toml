@@ -1,0 +1,10 @@
+[project]
+name = "mailean"
+version = "1.0.0"
+description = "Multi-account Gmail triage on GitHub Actions with a GitHub Pages dashboard"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "-q"
