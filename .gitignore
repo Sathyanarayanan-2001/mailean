@@ -1,0 +1,34 @@
+# ---- Personal data must never be committed ----
+# State lives only on the mailean-state branch of the PRIVATE data repository.
+state/
+# OAuth output, client secrets, tokens
+*.secret.json
+client_secret*.json
+mailean-accounts*.json
+.env
+.env.*
+# Exports, backups and folder-sync save files written by the dashboard
+mailean-inbox-*.csv
+mailean-receipts-*.csv
+mailean-backup-*
+mailean-save-*
+*.csv
+!tests/fixtures/*.csv
+*.bak
+*.backup
+*.json.gz
+exports/
+backups/
+
+# ---- Tools ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+test-results/
+playwright-report/
+_site/
+.DS_Store
+Thumbs.db
