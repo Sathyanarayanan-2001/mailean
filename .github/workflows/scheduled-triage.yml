@@ -51,6 +51,7 @@ jobs:
           MAILEAN_STATE_DIR: state
         run: python -m agent.sync_inbox
       - name: Publish state
-        # Publish even when an account failed, so the dashboard can show the error.
-        if: ${{ !cancelled() }}
+        # Publish even when an account failed, so the dashboard can show the error;
+        # skip when no state file was written (for example, secrets not set yet).
+        if: ${{ !cancelled() && hashFiles('state/inbox.json') != '' }}
         run: python -m agent.publish squash state "sync $(date -u +%Y-%m-%dT%H:%MZ)"

@@ -9,6 +9,15 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | 1.0.0 | 26/11/2026 | Sathyanarayanan, with Claude | First release. |
 | 1.0.0 (CI) | 26/11/2026 | Sathyanarayanan, with Claude | Pages build and deploy split into two jobs. |
 | 1.0.1 | 28/11/2026 | Sathyanarayanan, with Claude | Privacy policy page, so the Google OAuth app can be published. |
+| 1.0.2 | 28/11/2026 | Sathyanarayanan, with Claude | Private repository setup fixes: push with git, safer CI and publish steps. |
+
+## 1.0.2 - 28/11/2026
+
+### Fixed
+- Setup step D5 told you to use GitHub's web uploader, which silently skips `.github`, so the private repository got no workflows. The guide now uses git, and adds a check step.
+- CI could try to deploy Pages from the private repository when `MAILEAN_ROLE` was not set yet. The deploy now also requires a public repository.
+- A triage run before the secrets exist published an empty state branch. Publishing now needs a state file; the audit step needs an audit file.
+- `.gitignore` blocks `mailean-keys/`. The guide says plainly to keep the keys folder outside the code folder, and how to replace a client secret that was uploaded by mistake.
 
 ## 1.0.1 - 28/11/2026
 

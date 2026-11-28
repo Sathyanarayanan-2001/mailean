@@ -53,7 +53,7 @@ jobs:
           MAILEAN_STATE_DIR: state
         run: python -m agent.execute_commands
       - name: Publish the audit record
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && hashFiles('state/audit/**/*.json') != '' }}
         env:
           BATCH_ID: ${{ inputs.batch_id || github.event.client_payload.batch_id }}
         run: python -m agent.publish append state "commands ${BATCH_ID}"

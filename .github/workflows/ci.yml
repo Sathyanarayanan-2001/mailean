@@ -50,8 +50,8 @@ jobs:
   build-site:
     needs: test
     # Only the public dashboard repository deploys. The private data repository
-    # sets MAILEAN_ROLE=data and never publishes a site.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.MAILEAN_ROLE != 'data'
+    # never publishes a site: it is private, and it also sets MAILEAN_ROLE=data.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.private && vars.MAILEAN_ROLE != 'data'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
