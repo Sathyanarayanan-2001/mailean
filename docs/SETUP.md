@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.1.1 · 28/11/2026
+Version 1.1.2 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -154,7 +154,7 @@ The text of each email is saved at sync time. Emails that arrived after the last
 
 | Secret | What it does |
 |---|---|
-| `MAILEAN_STATE_PASSPHRASE` | Encrypts the state file, the saved email text and fetched attachments (at least 12 characters). Recommended, because email text is now stored. Enter the same passphrase in the dashboard under **Settings → Encrypted state**. |
+| `MAILEAN_STATE_PASSPHRASE` | Encrypts the state file, the saved email text and fetched attachments (at least 12 characters). Recommended, because email text is now stored. Texts saved earlier are encrypted at the next sync; attachments fetched earlier stay as they are until they are deleted after 7 days. Enter the same passphrase in the dashboard under **Settings → Encrypted state**. |
 
 The first sync after you turn on email text (version 1.1.0 or later) reads the text of every email in the inbox, so it takes longer once: about 4 minutes per 300 emails. Later syncs read the text of new emails only, and take about 75 seconds per 300 emails. Gmail limits each account to 6,000 quota units a minute, and Mailean stays under that on purpose. If a sync stops part-way, the next one carries on where it left off.
 

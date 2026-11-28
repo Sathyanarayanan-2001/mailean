@@ -1,6 +1,6 @@
 {
   "name": "mailean",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Mailean dashboard: static GitHub Pages app for multi-account Gmail triage",
   "license": "MIT",

@@ -285,3 +285,19 @@ def test_at_most_the_run_budget_of_new_texts_is_downloaded(tmp_path, monkeypatch
     sync(settings(tmp_path), gmail_factory=lambda a: g, classify=rules, now=NOW)
     assert sum(1 for c in g.calls if c[0] == "get_full") == 1
     assert len(list((tmp_path / "bodies" / "account_1").glob("*.json"))) == 3
+
+
+def test_setting_a_passphrase_later_encrypts_texts_already_saved(tmp_path):
+    g = box()
+    sync(settings(tmp_path), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    files = sorted((tmp_path / "bodies" / "account_1").glob("*.json"))
+    before = {f.name: json.loads(f.read_text()) for f in files}
+    assert all("enc" not in v for v in before.values())
+    g.calls.clear()
+    pw = "correct horse battery"
+    sync(settings(tmp_path, passphrase=pw), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    assert [c for c in g.calls if c[0] == "get_full"] == []          # no new Gmail downloads
+    for f in files:
+        blob = json.loads(f.read_text())
+        assert blob["enc"] == "mailean-aesgcm-v1"
+        assert decrypt_json(blob, pw) == before[f.name]              # same content, now encrypted

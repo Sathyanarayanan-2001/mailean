@@ -1,6 +1,6 @@
 # Mailean: inbox zero, minus the busywork
 
-Version 1.1.1 · 28/11/2026 · MIT licence
+Version 1.1.2 · 28/11/2026 · MIT licence
 
 Mailean sorts every Gmail account you own into six clear groups. You act on hundreds of emails at once from one dashboard, on your laptop or phone.
 

@@ -314,6 +314,9 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
     keep = {a: {m["id"] for m in msgs} for a, msgs in fetched.items()}
     if bodies is not None:
         bodies.prune(keep)
+        sealed = bodies.seal_plain()
+        if sealed:
+            print(f"Encrypted {sealed} email texts saved before the passphrase was set.")
     else:
         BodyStore(settings.state_dir).prune({a.id: set() for a in settings.accounts})
     FileStore(settings.state_dir).prune(keep, now)

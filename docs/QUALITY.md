@@ -1,6 +1,6 @@
 # Mailean quality record
 
-Version 1.1.1 · 28/11/2026
+Version 1.1.2 · 28/11/2026
 
 This file records how Mailean was built and checked: stage checkpoints, two verification rounds by two methods, performance numbers, a usability walkthrough, an FMEA, DMAIC and root-cause analyses. Every number here comes from a run in the build environment. Anything not run is marked **Not run** or **Unverified**.
 
@@ -15,6 +15,7 @@ This file records how Mailean was built and checked: stage checkpoints, two veri
 | 5 | Import and export | `exporter.js`, CSV import preview, Web Worker | Round trip and preview tests | – | Pass |
 | 6 | Documents and CI | Workflows, README, SETUP, ARCHITECTURE, SECURITY, CONTRIBUTING, CHANGELOG, LICENSE | actionlint + shellcheck, YAML parse | Live Pages URL cannot be checked before deployment | Pass |
 | 7 | Round 2, then commit | Clean-clone rerun, Lighthouse, screenshots | All suites (section 2) | See section 10 | Pass |
+| 10 | 1.1.2 seal saved texts | Existing plain texts encrypted once a passphrase is set | 101 Python (1 new) plus all other suites | – | Pass |
 | 9 | 1.1.1 quota fix | Current Gmail quota prices, resumable text saving, 300 new texts per run | 100 Python (6 new), 38 JS, 21 browser, actionlint, golden 15/15 (section 2, round 4) | – | Pass |
 | 8 | 1.1.0 reader | `agent/bodies.py`, `fetch_attachments`, `docs/js/mailtext.js`, reader in `app.js` | 94 Python, 38 JS, 21 browser tests (section 2, round 3) | "Open in Gmail" link form (section 10) | Pass |
 
