@@ -53,6 +53,32 @@ class QuotaPacer:
             self.sleep(wait)
 
 
+_PROJECT_RE = re.compile(r"project (\d{6,})")
+
+
+def explain_api_error(exc: http.HttpError) -> str:
+    """Turn a Gmail API error into one plain sentence that says how to fix it.
+
+    The raw message is long and was cut short in logs and on the dashboard, which
+    hid the useful part (which Google Cloud project, and what to switch on).
+    """
+    reason = exc.reason or ""
+    project = _PROJECT_RE.search(exc.message or "")
+    where = f" (project number {project.group(1)})" if project else ""
+    if reason in ("accessNotConfigured", "SERVICE_DISABLED") or "has not been used in project" in (exc.message or ""):
+        return (f"The Gmail API is turned off in the Google Cloud project that owns your OAuth client{where}. "
+                "In Google Cloud, select that project, open APIs & Services > Library > Gmail API and press Enable. "
+                "Wait about 5 minutes, then run Scheduled triage again.")
+    if reason in ("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"):
+        return ("The saved sign-in does not include Gmail access. Run scripts/setup_oauth.py again, allow the Gmail "
+                "permission, and update the MAILEAN_ACCOUNTS secret.")
+    if exc.status == 429 or reason in ("rateLimitExceeded", "userRateLimitExceeded"):
+        return "Gmail's rate limit was still reached after several retries. The next scheduled run will try again."
+    if exc.status >= 500 or exc.status == 0:
+        return f"Gmail could not be reached (HTTP {exc.status or 'no response'}). The next scheduled run will try again."
+    return f"Gmail API error {exc.status} ({reason or 'no reason given'}): {(exc.message or '')[:300]}"
+
+
 def mask_in_actions_log(secret: str) -> None:
     """Ask GitHub Actions to hide a value derived at runtime (access tokens are not secrets)."""
     if secret and os.environ.get("GITHUB_ACTIONS") == "true":

@@ -27,7 +27,7 @@ if __package__ in (None, ""):
 from agent import http
 from agent.commands import BULK_TRASH_CAP, Command, PayloadError, parse_payload
 from agent.config import Account, ConfigError, Settings, load_settings
-from agent.gmail import AuthError, Gmail, headers_of, refresh_access_token
+from agent.gmail import AuthError, Gmail, explain_api_error, headers_of, refresh_access_token
 from agent.http import HttpError
 from agent.state import write_audit
 
@@ -169,8 +169,10 @@ def execute(settings: Settings, raw_payload: str, *, gmail_factory: Callable[[Ac
                 g = factory(settings.account(cmd.account))  # type: ignore[arg-type]
                 clients[cmd.account] = g
                 label_caches[cmd.account] = g.labels() if any(c.op == "move_to_label" and c.account == cmd.account for c in commands) else {}
-            except (AuthError, HttpError) as exc:
+            except AuthError as exc:
                 clients[cmd.account] = exc
+            except HttpError as exc:
+                clients[cmd.account] = RuntimeError(explain_api_error(exc))
         client = clients[cmd.account]
         if isinstance(client, Exception):
             record["results"].append({"account": cmd.account, "op": cmd.op, "requested": len(cmd.ids),

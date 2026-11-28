@@ -22,7 +22,7 @@ if __package__ in (None, ""):  # allow "python agent/sync_inbox.py" as well as "
 from agent import VERSION
 from agent.classify import ClassifyReport, EmailInput, Triage, classify_all, make_client
 from agent.config import GROUPS, Account, ConfigError, Settings, load_settings
-from agent.gmail import AuthError, Gmail, headers_of, refresh_access_token
+from agent.gmail import AuthError, Gmail, explain_api_error, headers_of, refresh_access_token
 from agent.http import HttpError
 from agent.sanitize import clean_text, parse_from_header, redact_codes
 from agent.state import SCHEMA, StateError, read_state, recent_audit, write_state
@@ -253,7 +253,7 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
         except AuthError as exc:
             entry["error"] = str(exc)
         except HttpError as exc:
-            entry["error"] = f"Gmail API error {exc.status} ({exc.reason or 'no reason'}): {exc.message[:160]}"
+            entry["error"] = explain_api_error(exc)
         if entry["error"]:
             print(f"[{acct.id}] {entry['error']}")
             prev_acct = next((a for a in (previous or {}).get("accounts", []) if a.get("id") == acct.id), None)

@@ -151,6 +151,15 @@ Fix: a quote opens a quoted field only at the start of a field. Control: the imp
 
 Fix: the folder year comes from the batch id. Control: `test_audit_year_follows_batch_id_across_new_year`.
 
+**D4. First real sync failed: "Gmail API has not been used in project 931236531062 before or it is disabled" (28/11/2026).**
+1. Why did the sync fail? Gmail refused every call with 403 `accessNotConfigured`.
+2. Why? The Gmail API was not enabled in the Google Cloud project that owns the OAuth client.
+3. Why? The client was replaced after the keys upload, and the new client was in a different project from the one where the API was enabled.
+4. Why was that not caught at once? The setup guide did not say to check the project picker before creating a client.
+5. Why was the fix not obvious from the log? The agent cut Google's message at 160 characters, before the link that says what to enable.
+
+Fix: step A18 checks the project; Gmail errors are explained in one plain sentence with the project number. Control: `test_gmail_api_disabled_error_says_how_to_fix` replays the exact message.
+
 Other issues fixed during appearance review: inbox column headers out of line with their columns; a summary that repeated the subject; filters filling the phone screen; a cluttered bulk bar; rupee axis labels overflowing the chart; grid lines under their labels; link-buttons in the wrong colour in dark mode; table-of-contents chips under 44 px; a hint that pointed to the wrong guide step; the drawer close glyph; the cleanup "Archive" label.
 
 ## 8. DMAIC
