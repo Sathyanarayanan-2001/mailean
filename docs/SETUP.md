@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.0.1 · 28/11/2026
+Version 1.0.2 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -45,7 +45,8 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
     If the button is still grey, hover over it: Google lists the missing field. Fill it on the Branding page and save again.
 18. Open **Clients** and press **Create client**.
 19. Choose **Desktop app** as the application type, name it `mailean-desktop`, and press **Create**.
-20. Press **Download JSON**. Save the file as `client_secret.json` in a folder **outside** any git repository, for example `C:\Users\you\mailean-keys\`.
+20. Press **Download JSON**. Save the file as `client_secret.json` in its own folder, for example `C:\Users\you\mailean-keys\`.
+    **Never put this folder inside the `mailean` code folder.** Anything in that folder can end up in a repository when you upload the code.
 
 > If your console still shows the older menus, the same items are under **APIs & Services → OAuth consent screen** and **APIs & Services → Credentials → Create credentials → OAuth client ID**.
 
@@ -79,17 +80,27 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 2. Name it `gmail-command-center`.
 3. Choose **Private**. This matters: it will hold your email summaries.
 4. Press **Create repository**.
-5. Press **uploading an existing file**, drag in **all** files and folders from the unzipped `mailean` folder, and press **Commit changes**.
-   (Or with git: `git remote add data https://github.com/<you>/gmail-command-center.git` and `git push data main`.)
-6. Open **Settings → Secrets and variables → Actions**.
-7. Under **Secrets**, press **New repository secret**. Name `MAILEAN_ACCOUNTS`. Value: the line from part B, step 9.
-8. Add a second secret named `ANTHROPIC_API_KEY` with the key from part C.
-9. Switch to the **Variables** tab. Press **New repository variable**. Name `MAILEAN_ROLE`. Value `data`.
+5. Put the code in the repository. Choose one way:
+   - Ask Claude to push it for you, **or**
+   - with git (install it from git-scm.com if needed), in a terminal:
+     ```
+     git clone https://github.com/Sathyanarayanan-2001/mailean.git
+     cd mailean
+     git remote add data https://github.com/Sathyanarayanan-2001/gmail-command-center.git
+     git push data main
+     ```
+
+   Do **not** use the web page's **uploading an existing file**. It silently skips folders whose names start with a dot, such as `.github`, so no workflows arrive. The Actions tab then shows "Get started with GitHub Actions" instead of Mailean's workflows.
+6. Check the repository's file list: you should see a `.github` folder, and **no** `mailean-keys` folder.
+7. Open **Settings → Secrets and variables → Actions**.
+8. Under **Secrets**, press **New repository secret**. Name `MAILEAN_ACCOUNTS`. Value: the line from part B, step 9.
+9. Add a second secret named `ANTHROPIC_API_KEY` with the key from part C.
+10. Switch to the **Variables** tab. Press **New repository variable**. Name `MAILEAN_ROLE`. Value `data`.
    *Why:* the triage and command workflows only run where this is set, so the public copy never touches mail.
-10. Open **Settings → Actions → General**. Under **Workflow permissions**, keep **Read repository contents** selected. The workflows ask for the extra rights they need.
-11. Open the **Actions** tab. If asked, press **I understand my workflows, go ahead and enable them**.
-12. Choose **Scheduled triage** on the left, press **Run workflow**, and then **Run workflow** again.
-13. Wait about two minutes for a green tick. A branch named `mailean-state` now exists. It holds `inbox.json`.
+11. Open **Settings → Actions → General**. Under **Workflow permissions**, keep **Read repository contents** selected. The workflows ask for the extra rights they need.
+12. Open the **Actions** tab. If asked, press **I understand my workflows, go ahead and enable them**.
+13. Choose **Scheduled triage** on the left, press **Run workflow**, and then **Run workflow** again.
+14. Wait about two minutes for a green tick. A branch named `mailean-state` now exists. It holds `inbox.json`.
 
 ## E. Your fine-grained token
 
@@ -103,7 +114,7 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 ## F. The public dashboard repository and GitHub Pages
 
 1. Create a second repository named `mailean`. Choose **Public**. (Free GitHub Pages needs a public repository. This one holds code only, never data.)
-2. Upload the same files as in part D, step 5.
+2. Put the same code in it as in part D, step 5 (git, or ask Claude; not the web uploader).
 3. Open **Settings → Pages**.
 4. Under **Build and deployment → Source**, choose **GitHub Actions**.
 5. Open **Actions**, choose **CI**, and press **Run workflow**. Tests run first, then the site deploys.
@@ -153,6 +164,8 @@ To change how often triage runs, edit the `cron` line in `.github/workflows/sche
 |---|---|---|
 | "Google refused the saved sign-in (invalid_grant)" in the dashboard | The refresh token expired or was revoked. | Repeat part B for that account and update the secret. If it happens every 7 days, do part A, steps 10 to 17. |
 | "This repository is public" | The data repository is public. | Make it private: **Settings → General → Danger zone → Change visibility**. |
-| "No inbox data yet" | The first sync has not finished. | Part D, step 12. |
+| "No inbox data yet" | The first sync has not finished. | Part D, step 13. |
+| The Actions tab shows "Get started with GitHub Actions" | The `.github` folder is missing: the web uploader skips folders starting with a dot. | Part D, step 5: push with git, or ask Claude. |
+| A `mailean-keys` folder is in the repository | The keys folder sat inside the code folder when it was uploaded. | Delete the folder from the repository. Then, in Google Auth Platform → **Clients**, delete `mailean-desktop` and create a new Desktop client (part A, steps 18 to 20), so the uploaded secret no longer works. |
 | Execute waits at "Waiting for GitHub to start the run" | Actions is busy, or `MAILEAN_ROLE` is missing. | Check the **Actions** tab. Make sure the variable is set in the private repository. |
 | "The token is not allowed to …" | Token permissions are too narrow. | Part E, steps 3 to 5. |

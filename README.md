@@ -58,10 +58,10 @@ The full guide is [docs/SETUP.md](docs/SETUP.md) (about 30 minutes). In short:
 
 1. Enable the Gmail API in Google Cloud, and create a **Desktop app** OAuth client.
 2. Run `python scripts/setup_oauth.py --client-secret-file client_secret.json` and sign in to each Gmail account.
-3. Create a **private** repository `gmail-command-center`, upload these files, and add the secrets `MAILEAN_ACCOUNTS` and `ANTHROPIC_API_KEY` and the variable `MAILEAN_ROLE` = `data`.
+3. Create a **private** repository `gmail-command-center`, push this code to it with git (the web uploader skips `.github`), and add the secrets `MAILEAN_ACCOUNTS` and `ANTHROPIC_API_KEY` and the variable `MAILEAN_ROLE` = `data`.
 4. Run the **Scheduled triage** workflow once.
 5. Create a fine-grained token for that repository only (Contents: read; Actions: read and write).
-6. Create a **public** repository `mailean`, upload the same files, and set **Settings → Pages → Source** to **GitHub Actions**.
+6. Create a **public** repository `mailean`, push the same code, and set **Settings → Pages → Source** to **GitHub Actions**.
 7. Open the dashboard, enter `owner/gmail-command-center` and the token, and press **Connect**.
 
 Want to look first? Open the dashboard and press **Try the demo**. It uses a made-up inbox of 128 conversations.

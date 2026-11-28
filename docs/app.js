@@ -18,7 +18,7 @@ import { exportInboxCsv } from './js/exporter.js';
 import { buildImportPreview } from './js/csv.js';
 import { liveEntries } from './js/merge.js';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 export const RELEASE_DATE = '28/11/2026';
 const PAGE = 100; // rows rendered at a time keeps the DOM light on phones
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1083,7 +1083,7 @@ function viewGuide() {
       h('p', { text: 'The full, numbered instructions are in docs/SETUP.md in the repository. In short:' }),
       ol('In Google Cloud Console, turn on the Gmail API and create an OAuth client of type "Desktop app". Set the consent screen to "In production" so sign-ins do not expire after 7 days.',
         'On your computer, run python scripts/setup_oauth.py. Sign in to each Gmail account. Copy the one line it prints.',
-        'Create a private GitHub repository named gmail-command-center. Upload the Mailean files. Add the secrets MAILEAN_ACCOUNTS and ANTHROPIC_API_KEY, and the variable MAILEAN_ROLE = data.',
+        'Create a private GitHub repository named gmail-command-center. Push the Mailean code to it with git (the web uploader skips the .github folder). Add the secrets MAILEAN_ACCOUNTS and ANTHROPIC_API_KEY, and the variable MAILEAN_ROLE = data.',
         'Create a fine-grained token: only that repository; Contents read; Actions read and write.',
         'Open this page, enter owner/gmail-command-center and the token, and press Connect.')),
     sec('g-daily', 'Daily use',

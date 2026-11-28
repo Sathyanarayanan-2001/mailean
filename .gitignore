@@ -2,6 +2,7 @@
 # State lives only on the mailean-state branch of the PRIVATE data repository.
 state/
 # OAuth output, client secrets, tokens
+mailean-keys/
 *.secret.json
 client_secret*.json
 mailean-accounts*.json
