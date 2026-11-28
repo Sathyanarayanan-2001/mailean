@@ -2,7 +2,7 @@
 // static files are served from cache and refreshed in the background.
 // Cache names start with "mailean-" because every project on this github.io
 // account shares one origin; we only ever delete our own caches.
-const CACHE = 'mailean-v1.0.2';
+const CACHE = 'mailean-v1.0.3';
 const SHELL = [
   './', 'index.html', 'privacy.html', 'styles.css', 'app.js', 'theme-init.js', 'manifest.webmanifest', 'demo-state.json',
   'js/dom.js', 'js/format.js', 'js/model.js', 'js/commands.js', 'js/store.js', 'js/merge.js', 'js/sync.js',

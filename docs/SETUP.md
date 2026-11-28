@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.0.2 · 28/11/2026
+Version 1.0.3 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -43,7 +43,8 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 17. Open **Audience** and press **Publish app**. Confirm with **In production**.
     *Why:* while an app is in "Testing", Google expires its refresh tokens after 7 days. Publishing stops that. You do not need Google's verification for your own accounts. You will see an "unverified app" warning when you sign in; that is expected.
     If the button is still grey, hover over it: Google lists the missing field. Fill it on the Branding page and save again.
-18. Open **Clients** and press **Create client**.
+18. Check the project picker at the top still shows `mailean`, the project where you enabled the Gmail API in step 5. Then open **Clients** and press **Create client**.
+    *Why:* the client and the Gmail API must be in the same project. A client in another project fails with "Gmail API has not been used in project … before or it is disabled".
 19. Choose **Desktop app** as the application type, name it `mailean-desktop`, and press **Create**.
 20. Press **Download JSON**. Save the file as `client_secret.json` in its own folder, for example `C:\Users\you\mailean-keys\`.
     **Never put this folder inside the `mailean` code folder.** Anything in that folder can end up in a repository when you upload the code.
@@ -165,6 +166,7 @@ To change how often triage runs, edit the `cron` line in `.github/workflows/sche
 | "Google refused the saved sign-in (invalid_grant)" in the dashboard | The refresh token expired or was revoked. | Repeat part B for that account and update the secret. If it happens every 7 days, do part A, steps 10 to 17. |
 | "This repository is public" | The data repository is public. | Make it private: **Settings → General → Danger zone → Change visibility**. |
 | "No inbox data yet" | The first sync has not finished. | Part D, step 13. |
+| "The Gmail API is turned off in the Google Cloud project that owns your OAuth client" (Gmail API error 403, `accessNotConfigured`) | The OAuth client lives in a project where the Gmail API is not enabled. | In Google Cloud, select the project with the number shown, open **APIs & Services → Library → Gmail API** and press **Enable**. Wait about 5 minutes, then run **Scheduled triage** again. |
 | The Actions tab shows "Get started with GitHub Actions" | The `.github` folder is missing: the web uploader skips folders starting with a dot. | Part D, step 5: push with git, or ask Claude. |
 | A `mailean-keys` folder is in the repository | The keys folder sat inside the code folder when it was uploaded. | Delete the folder from the repository. Then, in Google Auth Platform → **Clients**, delete `mailean-desktop` and create a new Desktop client (part A, steps 18 to 20), so the uploaded secret no longer works. |
 | Execute waits at "Waiting for GitHub to start the run" | Actions is busy, or `MAILEAN_ROLE` is missing. | Check the **Actions** tab. Make sure the variable is set in the private repository. |

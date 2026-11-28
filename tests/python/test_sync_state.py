@@ -130,3 +130,30 @@ def test_setup_oauth_pkce_url_and_secret_format():
     assert parse_accounts_secret(value)[2][0].label == "Personal"
     with pytest.raises(ValueError):
         setup_oauth.assemble("id", "s", [{"id": "account_1"}, {"id": "account_1"}])
+
+
+def test_gmail_api_disabled_error_says_how_to_fix(tmp_path):
+    """The real failure from the first private run: Gmail API off in the client's project."""
+    from agent.http import HttpError
+
+    msg = ("Gmail API has not been used in project 931236531062 before or it is disabled. Enable it by visiting "
+           "https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=931236531062 then retry.")
+
+    class Disabled:
+        def profile(self):
+            raise HttpError(403, msg, "accessNotConfigured")
+
+    state = sync(settings(tmp_path), gmail_factory=lambda a: Disabled(), classify=rules, now=NOW)
+    err = state["accounts"][0]["error"]
+    assert "Gmail API is turned off" in err and "931236531062" in err and "Enable" in err
+
+
+def test_explain_api_error_cases():
+    from agent.gmail import explain_api_error
+    from agent.http import HttpError
+
+    assert "Gmail access" in explain_api_error(HttpError(403, "x", "insufficientPermissions"))
+    assert "rate limit" in explain_api_error(HttpError(429, "x", "rateLimitExceeded"))
+    assert "could not be reached (HTTP 503)" in explain_api_error(HttpError(503, "x"))
+    assert "could not be reached (HTTP no response)" in explain_api_error(HttpError(0, "network error"))
+    assert explain_api_error(HttpError(400, "Bad label", "invalidArgument")) == "Gmail API error 400 (invalidArgument): Bad label"

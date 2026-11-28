@@ -10,6 +10,13 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | 1.0.0 (CI) | 26/11/2026 | Sathyanarayanan, with Claude | Pages build and deploy split into two jobs. |
 | 1.0.1 | 28/11/2026 | Sathyanarayanan, with Claude | Privacy policy page, so the Google OAuth app can be published. |
 | 1.0.2 | 28/11/2026 | Sathyanarayanan, with Claude | Private repository setup fixes: push with git, safer CI and publish steps. |
+| 1.0.3 | 28/11/2026 | Sathyanarayanan, with Claude | Plain-language Gmail API errors, starting with "Gmail API is turned off". |
+
+## 1.0.3 - 28/11/2026
+
+### Fixed
+- The first real sync failed with Gmail API error 403 `accessNotConfigured`: the Gmail API was off in the Google Cloud project that owns the OAuth client. The agent cut the message at 160 characters, which hid the fix. Gmail errors now become one plain sentence that names the project number and says what to switch on. The dashboard shows it in the account banner.
+- `docs/SETUP.md`: step A18 checks the project picker before creating the client; a new troubleshooting row covers this error.
 
 ## 1.0.2 - 28/11/2026
 
