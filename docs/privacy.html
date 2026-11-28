@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Same policy as the app: only this site's own files load. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Privacy policy for Mailean, a personal Gmail triage tool: what Google user data it reads, why, where it is stored, and how to delete it.">
+  <title>Privacy policy · Mailean</title>
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="theme-init.js"></script>
+</head>
+<body class="doc-page">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Mailean home">
+      <img src="icons/favicon.svg" width="28" height="28" alt="">
+      <span>Mailean</span>
+    </a>
+  </header>
+  <main id="main" class="doc-main">
+    <article class="page narrow doc">
+      <header class="page-head">
+        <h1>Privacy policy</h1>
+        <p class="muted">Mailean · version 1.0.1 · effective 28/11/2026</p>
+      </header>
+
+      <section class="card stack" aria-labelledby="p-what">
+        <h2 id="p-what">What Mailean is</h2>
+        <p>Mailean is a personal tool. Its owner runs it for the owner's own Gmail accounts. It sorts the inbox into six groups, shows a dashboard, and applies actions the owner chooses, such as archive, label, mark read, star, move to Trash and unsubscribe. It is not offered to the public, and nobody else's account is connected to it.</p>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-data">
+        <h2 id="p-data">Google user data Mailean reads</h2>
+        <p>Mailean asks for one Gmail permission, <code>gmail.modify</code>. With it, Mailean reads, for messages in the inbox:</p>
+        <ul class="bullets">
+          <li>message and thread ids, labels, and the date received;</li>
+          <li>the sender's name and address, and the subject line;</li>
+          <li>the short preview text (snippet) that Gmail provides, up to 300 characters;</li>
+          <li>the List-Unsubscribe header, when a sender provides one.</li>
+        </ul>
+        <p>Mailean never reads full message bodies or attachments. It never sends email, and it never deletes mail permanently: "Trash" uses Gmail's own Trash, which Gmail keeps for 30 days.</p>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-use">
+        <h2 id="p-use">How the data is used</h2>
+        <ul class="bullets">
+          <li>To group each conversation, write a one-line summary, and suggest an action for the owner to review.</li>
+          <li>To show counts and charts on the owner's own dashboard.</li>
+          <li>To apply only the actions the owner queues and confirms.</li>
+        </ul>
+        <p>Mailean does not use Google user data for advertising, does not sell it, and does not use it to develop, improve or train generalised AI or machine-learning models.</p>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-share">
+        <h2 id="p-share">Who else processes it</h2>
+        <ul class="bullets">
+          <li><strong>Anthropic (Claude API):</strong> receives the sender, subject, labels and snippet of new messages, only to classify and summarise them for the owner. Anthropic's commercial terms govern how it handles these requests.</li>
+          <li><strong>GitHub:</strong> runs the agent in the owner's private repository and stores the results there. GitHub Pages serves this website.</li>
+        </ul>
+        <p>No other party receives Google user data. Nobody reads it by hand except the owner.</p>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-store">
+        <h2 id="p-store">Where it is stored, and for how long</h2>
+        <ul class="bullets">
+          <li><strong>Sign-in keys</strong> (OAuth refresh tokens) are stored as encrypted secrets in the owner's private GitHub repository.</li>
+          <li><strong>Triage results</strong> (ids, sender, subject, date, group, summary, suggested action) are stored in that private repository on one branch. Each sync replaces the branch, so older results are not kept in its history. Snippets are not stored unless the owner turns that on. Numbers that look like one-time codes are masked.</li>
+          <li><strong>On the owner's devices,</strong> the dashboard keeps the last loaded results so it works offline. Clearing site data, or <em>Settings → Clear cached inbox</em>, removes them.</li>
+        </ul>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-delete">
+        <h2 id="p-delete">How to revoke access and delete data</h2>
+        <ol class="steps">
+          <li>Remove Mailean's access in your Google Account: <em>Security → Your connections to third-party apps &amp; services</em>.</li>
+          <li>Delete the <code>MAILEAN_ACCOUNTS</code> secret, or the whole private repository, on GitHub.</li>
+          <li>In the dashboard, open <em>Settings</em> and choose <em>Forget token and cached inbox</em>.</li>
+        </ol>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-limited">
+        <h2 id="p-limited">Limited Use</h2>
+        <p>Mailean's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements.</p>
+      </section>
+
+      <section class="card stack" aria-labelledby="p-contact">
+        <h2 id="p-contact">Contact and changes</h2>
+        <p>Questions go to the owner through the project's GitHub page: <a href="https://github.com/Sathyanarayanan-2001/mailean">github.com/Sathyanarayanan-2001/mailean</a>. Changes to this policy are listed in the project's CHANGELOG, with a new effective date above.</p>
+      </section>
+
+      <p><a class="btn" href="./">Back to Mailean</a></p>
+    </article>
+  </main>
+</body>
+</html>

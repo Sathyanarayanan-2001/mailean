@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.0.0 · 26/11/2026
+Version 1.0.1 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -32,11 +32,20 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 7. Enter the app name `Mailean (personal)` and your email address as the support email.
 8. Choose **External** as the audience.
 9. Enter your email address as the contact, accept the policy and press **Create**.
-10. Open **Audience** and press **Publish app**. Confirm with **In production**.
+10. Open **Branding**.
+11. Under **App domain**, set **Application home page** to `https://sathyanarayanan-2001.github.io/mailean/`.
+12. Set **Application privacy policy link** to `https://sathyanarayanan-2001.github.io/mailean/privacy.html`.
+13. Leave **Application terms of service link** empty. It is optional.
+14. Under **Authorized domains**, press **Add domain** and enter `sathyanarayanan-2001.github.io`.
+    *Why:* Google needs the "top private domain" of the two links. `github.io` is a public suffix, so your own subdomain is that domain.
+15. Do **not** upload an app logo. A logo makes Google require a full verification.
+16. Press **Save**.
+17. Open **Audience** and press **Publish app**. Confirm with **In production**.
     *Why:* while an app is in "Testing", Google expires its refresh tokens after 7 days. Publishing stops that. You do not need Google's verification for your own accounts. You will see an "unverified app" warning when you sign in; that is expected.
-11. Open **Clients** and press **Create client**.
-12. Choose **Desktop app** as the application type, name it `mailean-desktop`, and press **Create**.
-13. Press **Download JSON**. Save the file as `client_secret.json` in a folder **outside** any git repository, for example `C:\Users\you\mailean-keys\`.
+    If the button is still grey, hover over it: Google lists the missing field. Fill it on the Branding page and save again.
+18. Open **Clients** and press **Create client**.
+19. Choose **Desktop app** as the application type, name it `mailean-desktop`, and press **Create**.
+20. Press **Download JSON**. Save the file as `client_secret.json` in a folder **outside** any git repository, for example `C:\Users\you\mailean-keys\`.
 
 > If your console still shows the older menus, the same items are under **APIs & Services → OAuth consent screen** and **APIs & Services → Credentials → Create credentials → OAuth client ID**.
 
@@ -142,7 +151,7 @@ To change how often triage runs, edit the `cron` line in `.github/workflows/sche
 
 | You see | Cause | Fix |
 |---|---|---|
-| "Google refused the saved sign-in (invalid_grant)" in the dashboard | The refresh token expired or was revoked. | Repeat part B for that account and update the secret. If it happens every 7 days, do part A, step 10. |
+| "Google refused the saved sign-in (invalid_grant)" in the dashboard | The refresh token expired or was revoked. | Repeat part B for that account and update the secret. If it happens every 7 days, do part A, steps 10 to 17. |
 | "This repository is public" | The data repository is public. | Make it private: **Settings → General → Danger zone → Change visibility**. |
 | "No inbox data yet" | The first sync has not finished. | Part D, step 12. |
 | Execute waits at "Waiting for GitHub to start the run" | Actions is busy, or `MAILEAN_ROLE` is missing. | Check the **Actions** tab. Make sure the variable is set in the private repository. |

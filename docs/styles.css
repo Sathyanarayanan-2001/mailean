@@ -369,6 +369,13 @@ dialog::backdrop { background: rgb(15 23 42 / 45%); }
 .toast .icon-btn { color: inherit; }
 .toast.error { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
 
+/* ---------- site footer and the stand-alone privacy page */
+.site-foot { max-width: 1200px; margin: 2.5rem auto 0; padding-top: 1rem; border-top: 1px solid var(--border); display: grid; gap: 0.25rem; font-size: var(--fs-sm); color: var(--muted); }
+.site-foot a { display: inline-flex; align-items: center; min-height: 44px; }
+.doc-main { padding: 1.5rem clamp(1rem, 3vw, 2rem) 3rem; }
+.doc h2 { margin-bottom: 0.25rem; }
+.doc code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+
 /* ---------- guide */
 .toc ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0; margin: 0; }
 .toc a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 0.75rem; border-radius: 999px; border: 1px solid var(--border); text-decoration: none; font-size: var(--fs-sm); }

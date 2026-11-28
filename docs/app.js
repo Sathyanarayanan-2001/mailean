@@ -18,8 +18,8 @@ import { exportInboxCsv } from './js/exporter.js';
 import { buildImportPreview } from './js/csv.js';
 import { liveEntries } from './js/merge.js';
 
-export const VERSION = '1.0.0';
-export const RELEASE_DATE = '26/11/2026';
+export const VERSION = '1.0.1';
+export const RELEASE_DATE = '28/11/2026';
 const PAGE = 100; // rows rendered at a time keeps the DOM light on phones
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -1056,7 +1056,7 @@ function viewSettings() {
 
   page.append(h('section', { class: 'card stack', 'aria-labelledby': 's-about' }, h('h2', { id: 's-about', text: 'About' }),
     h('p', { text: `Mailean ${VERSION}, released ${RELEASE_DATE}. MIT licence. Font: IBM Plex Sans (SIL Open Font Licence).` }),
-    h('p', { class: 'muted small', text: 'Revision history: see CHANGELOG.md in the repository.' })));
+    h('p', { class: 'muted small' }, 'Revision history: see CHANGELOG.md in the repository. ', h('a', { href: 'privacy.html', text: 'Privacy policy' }), '.')));
   return page;
 }
 
@@ -1107,7 +1107,8 @@ function viewGuide() {
         'Only sender, subject, date and labels go to Claude, never full bodies. Codes such as OTPs are masked.',
         'Email text is treated as data, never as instructions. Emails that try to instruct an AI are marked Suspicious and never get automatic suggestions.',
         'The agent only does what you queue and execute. Trash is recoverable in Gmail for 30 days; starred mail is never bulk-trashed.',
-        'This page talks only to api.github.com. No analytics, no other servers.')),
+        'This page talks only to api.github.com. No analytics, no other servers.'),
+      h('p', {}, 'Full details: ', h('a', { href: 'privacy.html', text: 'privacy policy' }), '.')),
     sec('g-trouble', 'Troubleshooting',
       ul(h('span', {}, h('strong', { text: '"GitHub rejected the token": ' }), 'create a new fine-grained token and connect again.'),
         h('span', {}, h('strong', { text: '"Google refused the saved sign-in": ' }), 'run setup_oauth.py again for that account and update MAILEAN_ACCOUNTS. If it happens every 7 days, set the OAuth app to "In production".'),
