@@ -12,6 +12,14 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | 1.0.2 | 28/11/2026 | Sathyanarayanan, with Claude | Private repository setup fixes: push with git, safer CI and publish steps. |
 | 1.0.3 | 28/11/2026 | Sathyanarayanan, with Claude | Plain-language Gmail API errors, starting with "Gmail API is turned off". |
 | 1.1.0 | 28/11/2026 | Sathyanarayanan, with Claude | Email reader: full text, conversation, attachments, Open in Gmail. |
+| 1.1.1 | 28/11/2026 | Sathyanarayanan, with Claude | Gmail quota fix: the first text sync hit Gmail's rate limit. |
+
+## 1.1.1 - 28/11/2026
+
+### Fixed
+- The first sync with email text failed after 75 seconds: "Gmail's rate limit was still reached". Google changed the Gmail API quota on 1 May 2026. Reading a message now costs 20 units, or 60 with its full text; an attachment 20; moving to Trash 20. Each account may use 6,000 units a minute. Mailean still charged the old prices (5 units), so it sent calls about 4 to 12 times too fast. The agent now charges the current prices and stays at 80 % of the limit.
+- A sync that stops part-way no longer loses its work: texts already saved are kept and not downloaded again, and their attachment counts are read back from the saved files.
+- At most 300 new texts are saved per account per run, so a very large inbox fills in over a few runs instead of timing out. The sync job may now run for 45 minutes.
 
 ## 1.1.0 - 28/11/2026
 

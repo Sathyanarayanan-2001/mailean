@@ -179,3 +179,109 @@ def test_sealer_derives_key_once():
     a, b = s.seal_bytes(b"one"), s.seal_bytes(b"two")
     assert a["salt"] == b["salt"] and a["iv"] != b["iv"]
     assert decrypt_bytes(b, "correct horse battery") == b"two"
+
+
+# ---------------------------------------------------------------- Gmail quota (changed by Google on 1 May 2026)
+
+def test_quota_costs_match_googles_current_table():
+    # Hand-copied from the Gmail API "Usage limits" page (checked 28/11/2026).
+    from agent.gmail import COST, USER_UNITS_PER_MINUTE
+    assert USER_UNITS_PER_MINUTE == 6000
+    assert COST == {"get": 20, "get_full": 60, "attachment": 20, "list": 5, "batchModify": 50, "trash": 20,
+                    "labels.list": 1, "labels.create": 5, "profile": 1}
+
+
+def test_pacer_never_exceeds_6000_units_in_any_minute_with_six_threads_worth_of_calls():
+    from agent.gmail import QuotaPacer
+    t = [0.0]
+    pacer = QuotaPacer(clock=lambda: t[0], sleep=lambda s: t.__setitem__(0, t[0] + s))
+    spent = []  # (time, units)
+    # The first body sync: 300 full fetches, then 300 metadata fetches and a few attachments.
+    for units in [60] * 300 + [20] * 300 + [20] * 10:
+        pacer.take(units)
+        spent.append((t[0], units))
+    total = sum(u for _, u in spent)
+    assert t[0] >= (total - 80) / 80 - 1e-6          # paced at 80 units a second
+    j = 0
+    window = 0
+    for i, (ti, u) in enumerate(spent):              # sliding 60-second window
+        window += u
+        while spent[j][0] <= ti - 60:
+            window -= spent[j][1]
+            j += 1
+        assert window <= 6000, (ti, window)
+
+
+def test_pacer_lets_a_call_dearer_than_the_bucket_through_and_repays_it():
+    from agent.gmail import QuotaPacer
+    t = [0.0]
+    pacer = QuotaPacer(units_per_second=10, clock=lambda: t[0], sleep=lambda s: t.__setitem__(0, t[0] + s))
+    pacer.take(50)      # more than the 10-unit bucket: waits for a full bucket, then runs into debt
+    pacer.take(10)      # repays 40 units of debt first: about 5 seconds
+    assert 4.9 <= t[0] <= 5.1
+
+
+def test_get_full_is_charged_as_a_full_fetch():
+    from agent.gmail import Gmail
+    charged = []
+
+    class Pacer:
+        def take(self, units):
+            charged.append(units)
+
+    g = Gmail("token", pacer=Pacer())
+    import agent.gmail as gm
+    real = gm.http.request
+    gm.http.request = lambda *a, **k: type("R", (), {"json": lambda self: {}})()
+    try:
+        g.get_full("abc123")
+        g.get_metadata("abc123")
+        g.get_attachment("abc123", "ATT1")
+    finally:
+        gm.http.request = real
+    assert charged == [60, 20, 20]
+
+
+def test_text_saving_resumes_after_a_run_that_stopped_part_way(tmp_path, monkeypatch):
+    import agent.sync_inbox as si
+    from agent.http import HttpError
+
+    g = box()
+    real_full = g.get_full
+    calls = {"n": 0}
+
+    def flaky_full(mid):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise HttpError(429, "Too many requests", reason="rateLimitExceeded")
+        return real_full(mid)
+
+    g.get_full = flaky_full
+    monkeypatch.setattr(si, "FETCH_WORKERS", 1)       # deterministic order: newest first
+    pw = "correct horse battery"
+    state = sync(settings(tmp_path, passphrase=pw), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    assert "rate limit" in state["accounts"][0]["error"]
+    saved = sorted(p.stem for p in (tmp_path / "bodies" / "account_1").glob("*.json"))
+    assert len(saved) == 2                             # kept for the next run, not pruned
+    # Next run: the two saved texts are not downloaded again, and their attachment counts come from the files.
+    g.get_full = real_full
+    g.calls.clear()
+    state = sync(settings(tmp_path, passphrase=pw), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    assert state["accounts"][0]["error"] is None
+    full = [c[1] for c in g.calls if c[0] == "get_full"]
+    assert len(full) == 1 and full[0] not in saved
+    thread = next(m for m in state["messages"] if m["thread_id"] == "aaaaaa1")
+    assert thread["attachments"] == 1 and thread["has_body"] is True
+
+
+def test_at_most_the_run_budget_of_new_texts_is_downloaded(tmp_path, monkeypatch):
+    import agent.sync_inbox as si
+    monkeypatch.setattr(si, "BODY_FETCHES_PER_RUN", 2)
+    g = box()
+    state = sync(settings(tmp_path), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    assert sum(1 for c in g.calls if c[0] == "get_full") == 2
+    assert sum(1 for m in state["messages"] if m["has_body"]) >= 1
+    g.calls.clear()
+    sync(settings(tmp_path), gmail_factory=lambda a: g, classify=rules, now=NOW)
+    assert sum(1 for c in g.calls if c[0] == "get_full") == 1
+    assert len(list((tmp_path / "bodies" / "account_1").glob("*.json"))) == 3

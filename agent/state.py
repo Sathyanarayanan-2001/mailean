@@ -9,6 +9,7 @@ unreadable. The dashboard decrypts with the same passphrase in the browser.
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import os
 import tempfile
@@ -24,6 +25,7 @@ class StateError(Exception):
     pass
 
 
+@functools.lru_cache(maxsize=16)  # files written in one run share a salt: derive once, not per file
 def _derive_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
     try:
         from cryptography.hazmat.primitives import hashes

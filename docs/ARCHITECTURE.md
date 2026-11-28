@@ -134,7 +134,7 @@ Each record is `{u: <ms>, v: …}`; a deletion is the tombstone `{d: 1, u}`. Key
 
 | Operation | Time | Memory | Notes |
 |---|---|---|---|
-| Sync fetch | O(n) API calls | O(n) | Paced to 80 quota units/s per mailbox, 6 parallel fetches |
+| Sync fetch | O(n) API calls | O(n) | Paced to 80 quota units/s per mailbox (Google allows 6,000 a minute), 6 parallel fetches. A metadata read costs 20 units, a full read 60, so 300 emails take about 75 s, or about 4 minutes the first time their text is saved. At most 300 new texts per account per run. |
 | Classification | O(n/25) model calls | O(n) | Only new messages; 4 batches in parallel; results cached by key |
 | Thread grouping | O(n) | O(n) | Hash map by thread id |
 | Sort (agent and browser) | O(n log n) | O(n) | Stable; ties broken by date, then name, then key |

@@ -20,7 +20,7 @@ jobs:
     # Runs only in the private data repository: set the repository variable MAILEAN_ROLE=data there.
     if: vars.MAILEAN_ROLE == 'data'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse to run in a public repository
