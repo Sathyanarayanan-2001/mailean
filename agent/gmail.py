@@ -17,7 +17,11 @@ MESSAGE_ID_RE = re.compile(r"^[0-9A-Za-z]{6,64}$")
 BATCH_MODIFY_LIMIT = 1000  # Gmail's documented maximum ids per batchModify call
 
 # Quota units per method (Gmail API reference, "Per-method quota usage").
-COST = {"get": 5, "attachment": 5, "list": 5, "batchModify": 50, "trash": 5, "labels.list": 1, "labels.create": 5, "profile": 1}
+# Quota units per call, from Google's "Usage limits" page for the Gmail API, which
+# changed on 1 May 2026: messages.get costs 20, or 60 with format=full.
+COST = {"get": 20, "get_full": 60, "attachment": 20, "list": 5, "batchModify": 50, "trash": 20,
+        "labels.list": 1, "labels.create": 5, "profile": 1}
+USER_UNITS_PER_MINUTE = 6_000  # per user, per project
 
 
 class AuthError(Exception):
@@ -27,11 +31,13 @@ class AuthError(Exception):
 class QuotaPacer:
     """Token bucket that keeps one mailbox under its per-user quota.
 
-    Google lists 6,000 quota units per user per minute (100/s). We pace at 80/s
-    to leave headroom for retries; parallel fetch threads share one bucket.
+    Google allows 6,000 quota units per user per minute (100 a second). We pace
+    at 80 a second to leave headroom for retries; parallel fetch threads share
+    one bucket. A call dearer than the bucket waits for a full bucket and then
+    runs into debt, which later calls repay, so the long-run rate always holds.
     """
 
-    def __init__(self, units_per_second: float = 80.0, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, units_per_second: float = USER_UNITS_PER_MINUTE / 60 * 0.8, clock=time.monotonic, sleep=time.sleep):
         self.rate = units_per_second
         self.capacity = units_per_second
         self.tokens = units_per_second
@@ -46,10 +52,11 @@ class QuotaPacer:
                 now = self.clock()
                 self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
                 self.last = now
-                if self.tokens >= units:
+                need = min(units, self.capacity)
+                if self.tokens >= need:
                     self.tokens -= units
                     return
-                wait = (units - self.tokens) / self.rate
+                wait = (need - self.tokens) / self.rate
             self.sleep(wait)
 
 
@@ -151,10 +158,10 @@ class Gmail:
         return self._call("GET", f"/messages/{message_id}?{query}", "get")
 
     def get_full(self, message_id: str) -> dict:
-        """Whole message structure: headers, text parts inline, attachments as ids (same quota as metadata)."""
+        """Whole message structure: headers, text parts inline, attachments as ids (3x the quota of metadata)."""
         if not MESSAGE_ID_RE.match(message_id):
             raise ValueError("invalid message id")
-        return self._call("GET", f"/messages/{message_id}?format=full", "get")
+        return self._call("GET", f"/messages/{message_id}?format=full", "get_full")
 
     def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
         if not MESSAGE_ID_RE.match(message_id):

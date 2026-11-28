@@ -9,6 +9,7 @@ sorting O(n log n). Memory O(n).
 from __future__ import annotations
 
 import concurrent.futures as cf
+import threading
 import sys
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -29,6 +30,9 @@ from agent.sanitize import clean_text, parse_from_header, redact_codes
 from agent.state import SCHEMA, Sealer, StateError, read_state, recent_audit, write_state
 
 FETCH_WORKERS = 6
+# New texts saved per account per run. A full fetch costs 60 quota units, so 300
+# take about 4 minutes at the paced rate; a large inbox fills in over a few runs.
+BODY_FETCHES_PER_RUN = 300
 CLEANUP_MIN_COUNT = 3
 CLEANUP_OLD_DAYS = 30
 CLEANUP_GROUPS = ("promotions_spam", "newsletters_reading", "low_priority")
@@ -79,18 +83,30 @@ def fetch_account(gmail: Gmail, query: str, limit: int, now: datetime, *, accoun
     pairs = gmail.list_message_ids(query, limit)
     out: list[dict] = []
     known = known or {}
+    budget = [BODY_FETCHES_PER_RUN]
+    budget_lock = threading.Lock()
+
+    def take_budget() -> bool:
+        with budget_lock:
+            if budget[0] <= 0:
+                return False
+            budget[0] -= 1
+            return True
 
     def one(pair: tuple[str, str]) -> dict | None:
         mid, tid = pair
         attachments = known.get(mid)
         try:
-            if bodies is not None and (mid not in known or not bodies.has(account, mid)):
+            if bodies is not None and not bodies.has(account, mid) and take_budget():
                 msg = gmail.get_full(mid)
                 body = extract(msg, fetch_attachment=lambda aid: gmail.get_attachment(mid, aid))
                 bodies.put(account, mid, body)
                 attachments = len(body["attachments"])
             else:
                 msg = gmail.get_metadata(mid)
+                if bodies is not None and attachments is None and bodies.has(account, mid):
+                    # Saved by an earlier run that stopped part-way: read the count from the file.
+                    attachments = bodies.attachment_count(account, mid)
         except HttpError as exc:
             if exc.status == 404:  # deleted between list and get
                 return None
@@ -267,7 +283,7 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
     fetched: dict[str, list[dict]] = {}
     info: list[dict] = []
     sealer = Sealer(settings.state_passphrase) if settings.state_passphrase else None
-    bodies = BodyStore(settings.state_dir, sealer) if settings.store_bodies else None
+    bodies = BodyStore(settings.state_dir, sealer, settings.state_passphrase) if settings.store_bodies else None
     prev_index: dict[str, dict[str, int]] = (previous or {}).get("body_index") or {}
     body_index: dict[str, dict[str, int]] = {}
     for acct in settings.accounts:

@@ -18,7 +18,7 @@ import { exportInboxCsv } from './js/exporter.js';
 import { buildImportPreview } from './js/csv.js';
 import { liveEntries } from './js/merge.js';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 export const RELEASE_DATE = '28/11/2026';
 const PAGE = 100; // rows rendered at a time keeps the DOM light on phones
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;

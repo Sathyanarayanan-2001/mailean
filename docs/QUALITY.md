@@ -1,6 +1,6 @@
 # Mailean quality record
 
-Version 1.1.0 · 28/11/2026
+Version 1.1.1 · 28/11/2026
 
 This file records how Mailean was built and checked: stage checkpoints, two verification rounds by two methods, performance numbers, a usability walkthrough, an FMEA, DMAIC and root-cause analyses. Every number here comes from a run in the build environment. Anything not run is marked **Not run** or **Unverified**.
 
@@ -15,6 +15,7 @@ This file records how Mailean was built and checked: stage checkpoints, two veri
 | 5 | Import and export | `exporter.js`, CSV import preview, Web Worker | Round trip and preview tests | – | Pass |
 | 6 | Documents and CI | Workflows, README, SETUP, ARCHITECTURE, SECURITY, CONTRIBUTING, CHANGELOG, LICENSE | actionlint + shellcheck, YAML parse | Live Pages URL cannot be checked before deployment | Pass |
 | 7 | Round 2, then commit | Clean-clone rerun, Lighthouse, screenshots | All suites (section 2) | See section 10 | Pass |
+| 9 | 1.1.1 quota fix | Current Gmail quota prices, resumable text saving, 300 new texts per run | 100 Python (6 new), 38 JS, 21 browser, actionlint, golden 15/15 (section 2, round 4) | Real sync after the fix (section 10) | Pass |
 | 8 | 1.1.0 reader | `agent/bodies.py`, `fetch_attachments`, `docs/js/mailtext.js`, reader in `app.js` | 94 Python, 38 JS, 21 browser tests (section 2, round 3) | "Open in Gmail" link form (section 10) | Pass |
 
 Work was done on branch `feature/v1.0.0` and merged into `main` with `--no-ff` after every test passed. There was no GitHub access from the build environment, so this was a local merge, not a GitHub pull request.
@@ -56,6 +57,14 @@ Work was done on branch `feature/v1.0.0` and merged into `main` with `--no-ff` a
 | Workflows | actionlint | – | **clean** |
 | First load | Lighthouse, mobile, run 1: LCP 1.87 s | Run 2: LCP 1.88 s | **Perf 94, A11y 100, BP 100, SEO 100** |
 | Appearance | Reader screenshots by eye at 320 px light, 375 and 390 px dark, desktop light | Automated: reader fills a 320 and 390 px screen, no sideways scroll, targets 44 px or more; axe-core on the open reader, light and dark | **pass** after 3 fixes (section 7) |
+
+### Round 4 (version 1.1.1: Gmail quota)
+
+| Check | Method A | Method B | Result |
+|---|---|---|---|
+| Quota prices | Gmail API "Usage limits" page found by web search: per user 6,000 units a minute; `messages.get` 20, or 60 with `format=full` | The same page opened directly: same figures, plus `attachments.get` 20 and `messages.trash` 20 | **match**; the agent's table equals them (test) |
+| Pacing | Simulated clock: 610 calls never exceed 6,000 units in any 60-second window | Arithmetic: 300 full reads × 60 units ÷ 80 units a second ≈ 225 s | **pass** |
+| Resume | Test: a run stopped by a rate-limit error keeps its saved texts; the next run downloads only the rest | Encrypted texts read back for their attachment counts | **pass** |
 
 ### What the tests cover (each states input and hand-worked expected result)
 
@@ -137,6 +146,7 @@ Fixes made because of the walkthrough and screenshots: on phones the filters fil
 | 18 | Reader | Link text disguises the real address | Phishing click | Hostile email | 7 | 4 | 3 | 84 | Visible text is always the real URL; http(s) only; no clickable links in suspicious emails |
 | 19 | Attachments | Malicious file opened | Malware on the device | Hostile attachment | 9 | 3 | 5 | 135 | Saved as a file, never opened in the page; extra confirmation for suspicious emails; owner must scan. Remaining action: scan before opening |
 | 20 | Storage | Email text or files outlive the email | Data kept longer than needed | Missed pruning | 6 | 3 | 3 | 54 | Pruned every sync; files after 7 days; tested; optional encryption; `MAILEAN_STORE_BODIES=0` |
+| 22 | Storage | Gmail rate limit stops the sync | Stale inbox, texts missing | Quota prices changed by Google | 5 | 3 | 3 | 45 | Current prices in one table with a test; 80 % pacing; Retry-After honoured; saved work kept; 300 new texts per run |
 | 21 | Reader | Text missing for a new email | Owner cannot review | Email arrived after the last sync | 3 | 6 | 1 | 18 | Clear note with the fix; "Open in Gmail" |
 
 The highest risks (RPN 100 and over) are #19 attachments, #7 OTPs and #6 amounts. All have controls. Remaining actions: scan downloaded files before opening them (#19); review receipts totals against your bank before relying on them (#6).
@@ -208,6 +218,15 @@ Fix: the dialog close button does not shrink. Control: a new test checks every t
 
 Fix: the reader redraws the top bar after staging. Control: the browser test checks the count.
 
+**D8. The first real sync with email text failed: "Gmail's rate limit was still reached after several retries" (28/11/2026).**
+1. Why? Gmail answered 429 even after five retries with backoff.
+2. Why? The agent used about 17,000 quota units in 75 seconds; Gmail allows 6,000 a minute per account.
+3. Why? The pacer charged 5 units for each message read, but a full read costs 60.
+4. Why? Google changed the Gmail API prices on 1 May 2026. The cost table came from the older price list, while the per-minute limit came from the new one.
+5. Why was it not caught? The tests used a fake Gmail with no quota, nothing compared the table with Google's page, and metadata-only syncs had stayed close enough to the limit to pass.
+
+Fix: the table now holds the current prices, checked against Google's page by two methods, and a test pins it. A sliding-window test proves the pacing. Saved texts survive a stopped run. Control: a real sync on GitHub after the fix (section 10).
+
 ## 8. DMAIC
 
 - **Define:** one person, several Gmail accounts, daily triage on a laptop and phone. Goal: sort and clear mail in bulk without exposing any email data.
@@ -243,7 +262,7 @@ Fix: the reader redraws the top bar after staging. Control: the browser test che
 
 - The live address https://sathyanarayanan-2001.github.io/mailean/: GitHub reports each Pages deployment as successful. The page itself could not be opened from the build environment, so its content online is **Unverified**.
 - **Open in Gmail** builds `mail.google.com/mail/?authuser=<address>#search/rfc822msgid:<id>`. The search operator is documented by Gmail Help; the `authuser` parameter and the `#search/` address form are not documented there and were not tried against a real Gmail account: **Unverified**. **Copy Gmail search** uses only the documented operator.
-- Reading full messages (`format=full`) and attachments was tested with the in-memory fake. Real Gmail responses are **Not run** until your next sync.
+- Reading full messages (`format=full`) ran against real Gmail on GitHub on 28/11/2026 and hit the rate limit (D8). The real sync after the fix is **Not run** at the time of this commit. Fetching attachments from real Gmail is **Not run** until you press "Fetch attachments".
 - The Claude path was tested with a fake client. A real API call, cost and accuracy are **Not run**.
 - The Gmail API was tested with an in-memory fake. The real OAuth flow in `setup_oauth.py` is **Not run** end to end (its URL building, PKCE and output format are tested).
 - GitHub Actions runs (scheduled triage, run commands, Pages deploy) are **Not run** on GitHub. They are linted, and their Python steps are tested locally, including git publishing against a real local remote.

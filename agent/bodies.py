@@ -248,15 +248,30 @@ def safe_filename(name: str) -> str:
 class BodyStore:
     """One JSON file per message: bodies/<account>/<message id>.json on the state branch."""
 
-    def __init__(self, state_dir: Path, sealer=None):
+    def __init__(self, state_dir: Path, sealer=None, passphrase: str | None = None):
         self.root = state_dir / "bodies"
         self.sealer = sealer
+        self.passphrase = passphrase
 
     def path(self, account: str, message_id: str) -> Path:
         return self.root / account / f"{message_id}.json"
 
     def has(self, account: str, message_id: str) -> bool:
         return self.path(account, message_id).exists()
+
+    def attachment_count(self, account: str, message_id: str) -> int | None:
+        """Attachments listed in a saved text, or None if it cannot be read."""
+        from .state import ENC_TAG, StateError, decrypt_json
+
+        try:
+            data = json.loads(self.path(account, message_id).read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("enc") == ENC_TAG:
+                if not self.passphrase:
+                    return None
+                data = decrypt_json(data, self.passphrase)
+            return len(data["attachments"])
+        except (OSError, ValueError, KeyError, TypeError, StateError):
+            return None
 
     def put(self, account: str, message_id: str, body: dict) -> None:
         path = self.path(account, message_id)

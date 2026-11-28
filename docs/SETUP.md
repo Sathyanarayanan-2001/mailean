@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.1.0 · 28/11/2026
+Version 1.1.1 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -156,9 +156,9 @@ The text of each email is saved at sync time. Emails that arrived after the last
 |---|---|
 | `MAILEAN_STATE_PASSPHRASE` | Encrypts the state file, the saved email text and fetched attachments (at least 12 characters). Recommended, because email text is now stored. Enter the same passphrase in the dashboard under **Settings → Encrypted state**. |
 
-The first sync after you turn on email text (version 1.1.0 or later) reads the text of every email in the inbox, so it takes longer once. Later syncs read only new emails.
+The first sync after you turn on email text (version 1.1.0 or later) reads the text of every email in the inbox, so it takes longer once: about 4 minutes per 300 emails. Later syncs read the text of new emails only, and take about 75 seconds per 300 emails. Gmail limits each account to 6,000 quota units a minute, and Mailean stays under that on purpose. If a sync stops part-way, the next one carries on where it left off.
 
-To change how often triage runs, edit the `cron` line in `.github/workflows/scheduled-triage.yml`. GitHub uses UTC, and scheduled runs can start a few minutes late. A private repository uses GitHub Actions minutes: 6 syncs a day at about 2 minutes each is roughly 360 minutes a month. Check your plan's allowance on GitHub's billing page.
+To change how often triage runs, edit the `cron` line in `.github/workflows/scheduled-triage.yml`. GitHub uses UTC, and scheduled runs can start a few minutes late. A private repository uses GitHub Actions minutes: 6 syncs a day at about 2 minutes each (300 emails, one account) is roughly 360 minutes a month. Check your plan's allowance on GitHub's billing page.
 
 ## I. Add an account later
 
@@ -186,5 +186,6 @@ To change how often triage runs, edit the `cron` line in `.github/workflows/sche
 | "The token is not allowed to …" | Token permissions are too narrow. | Part E, steps 3 to 5. |
 | "The full text of this email is not saved yet" | The email arrived after the last sync. | Wait for the next sync, or open **Activity** and press **Run sync now**. |
 | "Saving email text is turned off" | The variable `MAILEAN_STORE_BODIES` is `0`. | Delete the variable, or set it to `1`, then run a sync. |
+| "Gmail's rate limit was still reached after several retries" | Too many Gmail calls in one minute. Versions before 1.1.1 did not know Google's new quota prices. | Update to 1.1.1 or later. Run the sync again: it keeps the texts already saved. |
 | "Wrong passphrase" when reading or downloading | The dashboard passphrase differs from `MAILEAN_STATE_PASSPHRASE`. | **Settings → Encrypted state**: enter the same passphrase. |
 | **Fetch attachments** ends with "The run ended with failure" | The agent could not read the email, for example because it left the inbox. | Open **Activity**, then the run on GitHub, for the reason. Use **Open in Gmail** instead. |
