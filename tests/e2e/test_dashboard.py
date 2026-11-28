@@ -252,7 +252,7 @@ def test_phone_layout_no_sideways_scroll_and_44px_targets(browser, base_url, wid
         page.wait_for_timeout(250)
         sw = page.evaluate("document.documentElement.scrollWidth")
         assert sw <= width, f"{route} scrolls sideways at {width}px ({sw})"
-        small = page.evaluate("""() => [...document.querySelectorAll('main button, main a.btn, main .toc a, main .link-card, main select, main input:not([type=checkbox]):not([type=radio]):not([type=file]), .bottomnav .tab, .topbar button')]
+        small = page.evaluate("""() => [...document.querySelectorAll('main button, main a.btn, main .toc a, main .link-card, main .site-foot a, main select, main input:not([type=checkbox]):not([type=radio]):not([type=file]), .bottomnav .tab, .topbar button')]
             .filter(e => e.offsetParent !== null)
             .map(e => [e.textContent.trim().slice(0, 30) || e.getAttribute('aria-label') || e.tagName, Math.round(e.getBoundingClientRect().height), Math.round(e.getBoundingClientRect().width)])
             .filter(([, h, w]) => h < 44 || w < 44)""")
@@ -274,3 +274,27 @@ def test_accessibility_axe_no_serious_issues(browser, base_url):
             res = page.evaluate("axe.run(document, {runOnly: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']})")
             bad = [(v["id"], v["impact"], [n["target"] for n in v["nodes"]][:3]) for v in res["violations"] if v["impact"] in ("serious", "critical")]
             assert bad == [], f"{scheme} {route}: {bad}"
+
+
+def test_privacy_policy_page_and_home_link(browser, base_url):
+    # Google's Branding page needs a privacy policy on the home page's domain, linked
+    # from the home page. The link must be in the static HTML, not added by script.
+    html = (DOCS / "index.html").read_text(encoding="utf-8")
+    assert 'href="privacy.html"' in html
+    for scheme in ("light", "dark"):
+        for width in (320, 1280):
+            page = new_page(browser, base_url, width=width, scheme=scheme, bypass_csp=True)
+            page.goto(base_url + "privacy.html")
+            page.wait_for_load_state("networkidle")
+            assert page.get_by_role("heading", name="Privacy policy", level=1).is_visible()
+            text = page.inner_text("main")
+            for needle in ("gmail.modify", "Limited Use", "Anthropic", "revoke access", "does not sell"):
+                assert needle.lower() in text.lower(), needle
+            assert page.evaluate("document.documentElement.scrollWidth") <= width
+            if AXE.exists():
+                page.add_script_tag(path=str(AXE))
+                res = page.evaluate("axe.run(document, {runOnly: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']})")
+                assert [v["id"] for v in res["violations"] if v["impact"] in ("serious", "critical")] == []
+            page.get_by_role("link", name="Back to Mailean").click()
+            page.wait_for_selector(".site-foot a[href='privacy.html']")
+            assert page.errors == [], page.errors

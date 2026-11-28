@@ -112,7 +112,7 @@ Fixes made because of the walkthrough and screenshots: on phones the filters fil
 | 7 | Evaluation | OTP copied into a subject or summary | Secret stored in git | Codes in subjects | 7 | 4 | 4 | 112 | Code redaction; snippets off by default; history squashed |
 | 8 | Storage | State committed to a public repository | Privacy breach | Wrong repository visibility | 10 | 2 | 2 | 40 | Workflows refuse public repos; dashboard refuses; `MAILEAN_ROLE` gate; optional encryption |
 | 9 | Storage | Sync and command runs overwrite each other | Lost audit or state | Concurrent pushes | 5 | 3 | 2 | 30 | Lease on squash; cherry-pick append; tested both orders |
-| 10 | Storage | Refresh token expires after 7 days | Sync stops | OAuth app left in Testing | 6 | 6 | 2 | 72 | SETUP step A10; error banner names the fix; other accounts keep working |
+| 10 | Storage | Refresh token expires after 7 days | Sync stops | OAuth app left in Testing | 6 | 6 | 2 | 72 | SETUP steps A10–A17 (privacy page, then publish); error banner names the fix; other accounts keep working |
 | 11 | Storage | Folder-sync file read while still downloading | Merge error | OneDrive late delivery | 3 | 6 | 2 | 36 | File skipped and retried; status shown |
 | 12 | Storage | Two devices act on the same item | Double action | Shared queue | 3 | 3 | 4 | 36 | Gmail actions are idempotent; tombstones propagate; history kept |
 | 13 | Reporting | Dashboard total differs from data | Wrong decision | Float maths, time zone | 6 | 2 | 1 | 12 | Integer paise; Python oracle cross-check |

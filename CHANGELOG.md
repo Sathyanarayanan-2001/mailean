@@ -8,6 +8,16 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 |---|---|---|---|
 | 1.0.0 | 26/11/2026 | Sathyanarayanan, with Claude | First release. |
 | 1.0.0 (CI) | 26/11/2026 | Sathyanarayanan, with Claude | Pages build and deploy split into two jobs. |
+| 1.0.1 | 28/11/2026 | Sathyanarayanan, with Claude | Privacy policy page, so the Google OAuth app can be published. |
+
+## 1.0.1 - 28/11/2026
+
+### Added
+- `privacy.html`: privacy policy describing which Google user data Mailean reads, how it is used, stored, shared and deleted, with the Limited Use statement. Google's Branding page requires a home page and a privacy policy link before an External app can switch to "In production".
+- Static footer on the home page linking the privacy policy (readable without JavaScript); links from Guide and Settings.
+
+### Changed
+- `docs/SETUP.md` part A: Branding steps (home page, privacy link, authorized domain, no logo) before publishing.
 
 ## 1.0.0 - 26/11/2026
 
