@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 DOCS = ROOT / "docs"
 DEMO = json.loads((DOCS / "demo-state.json").read_text(encoding="utf-8"))
+DEMO_BODIES = json.loads((DOCS / "demo-bodies.json").read_text(encoding="utf-8"))
 AXE = ROOT / "node_modules" / "axe-core" / "axe.min.js"
 TOKEN = "github_pat_" + "A1" * 20
 REPO = "sample-owner/gmail-command-center"
@@ -298,3 +299,202 @@ def test_privacy_policy_page_and_home_link(browser, base_url):
             page.get_by_role("link", name="Back to Mailean").click()
             page.wait_for_selector(".site-foot a[href='privacy.html']")
             assert page.errors == [], page.errors
+
+
+# ---------------------------------------------------------------- email reader
+
+def open_reader_with_attachments(page):
+    """Open the first listed email that has attachments; return its row key."""
+    key = page.evaluate("""() => {
+        const li = [...document.querySelectorAll('li.mail')].find((l) => l.querySelector('[title*="attachment"]'));
+        li.querySelector('button.subject').click();
+        return li.dataset.key;
+    }""")
+    page.wait_for_selector("#reader[open] .mail-text")
+    return key
+
+
+def first_line(text):
+    return next(line for line in text.splitlines() if line.strip()).strip()
+
+
+def test_demo_reader_shows_text_and_attachments_and_stages_actions(browser, base_url):
+    page = new_page(browser, base_url, demo=True)
+    page.wait_for_selector("text=suggested actions ready")
+    page.goto(base_url + "#/inbox")
+    key = open_reader_with_attachments(page)
+    row = next(m for m in DEMO["messages"] if f"{m['account']}:{m['id']}" == key)
+    body = DEMO_BODIES[key]
+    reader = page.locator("#reader")
+    assert reader.locator("#reader-title").inner_text() == row["subject"]
+    assert first_line(body["text"]) in reader.locator(".mail-text").first.inner_text()
+    assert body["to"] in reader.locator(".mail-meta").first.inner_text()
+    names = [a["name"] for a in body["attachments"]]
+    for n in names:
+        assert reader.locator(".attach-list", has_text=n).count() == 1
+    # Fetch (simulated in the demo), then download: the file is saved, never opened.
+    reader.get_by_role("button", name="Fetch attachments").click()
+    btn = reader.get_by_role("button", name=re.compile("^Download " + re.escape(names[0])))
+    btn.wait_for(timeout=5000)
+    with page.expect_download() as dl:
+        btn.click()
+    assert dl.value.suggested_filename == names[0]
+    assert Path(dl.value.path()).read_text(encoding="utf-8").startswith("Made-up demo file")
+    # Next and previous, by button and by keyboard.
+    counter = reader.locator(".reader-nav .num")
+    assert counter.inner_text().startswith("1 of") or counter.inner_text().split(" of ")[0].isdigit()
+    start = int(counter.inner_text().split(" of ")[0].replace(",", ""))
+    reader.get_by_role("button", name="Next ›").click()
+    pw.expect(counter).to_have_text(re.compile(f"^{start + 1} of"))
+    page.keyboard.press("ArrowLeft")
+    pw.expect(counter).to_have_text(re.compile(f"^{start} of"))
+    # Staging from the reader queues the action and moves to the next email.
+    reader.get_by_role("button", name="Archive").click()
+    pw.expect(counter).to_have_text(re.compile(f"^{start + 1} of"))
+    pw.expect(page.locator("#queue-btn .count")).to_have_text("1")
+    reader.get_by_role("button", name="Close the email").click()
+    assert page.locator(f'.mail[data-key="{key}"] .tag.queued').inner_text() == "Queued: Archive"
+    assert page.errors == []
+
+
+def test_reader_links_are_safe_and_suspicious_links_are_not_clickable(browser, base_url):
+    page = new_page(browser, base_url, demo=True)
+    page.wait_for_selector("text=suggested actions ready")
+    page.goto(base_url + "#/inbox")
+    page.get_by_label("Search").fill("fault ride-through explained")
+    page.locator("li.mail button.subject", has_text="fault ride-through explained").first.click()
+    link = page.locator("#reader .mail-text a")
+    link.first.wait_for()
+    assert link.count() == 1
+    assert link.first.get_attribute("href") == "https://gridnotes.test/frt"
+    assert link.first.inner_text() == "https://gridnotes.test/frt"
+    assert set(link.first.get_attribute("rel").split()) >= {"noopener", "noreferrer"}
+    page.locator("#reader").get_by_role("button", name="Close the email").click()
+    page.get_by_label("Search").fill("Invoice overdue")
+    page.locator("li.mail button.subject", has_text="Invoice overdue").first.click()
+    page.wait_for_selector("#reader .mail-text")
+    text = page.locator("#reader .mail-text").inner_text()
+    assert "https://unknown-vendor.test/pay-now" in text
+    assert page.locator("#reader .mail-text a").count() == 0
+    assert "shown as plain text" in page.locator("#reader").inner_text()
+    assert page.errors == []
+
+
+class ReaderGitHub(FakeGitHub):
+    """Adds saved texts and fetched attachments, written by the agent's own code."""
+
+    def __init__(self, state_blob, bodies, files_dir):
+        super().__init__()
+        self.state_blob = state_blob
+        self.bodies = bodies
+        self.files_dir = files_dir
+        self.on_fetch = None
+
+    def handle(self, route):
+        url = route.request.url
+        path = url.split("/contents/", 1)[1].split("?", 1)[0] if "/contents/" in url else ""
+        if path == "inbox.json":
+            return route.fulfill(status=200, body=json.dumps(self.state_blob), headers={"ETag": '"v1"', "Access-Control-Expose-Headers": "ETag"})
+        m = re.fullmatch(r"bodies/([a-z0-9_]+)/([0-9A-Za-z]+)\.json", path)
+        if m:
+            blob = self.bodies.get(f"{m.group(1)}:{m.group(2)}")
+            return route.fulfill(status=200, body=json.dumps(blob)) if blob else route.fulfill(status=404, json={"message": "Not Found"})
+        if path.startswith("files/"):
+            from urllib.parse import unquote
+            f = self.files_dir / unquote(path)[len("files/"):]
+            return route.fulfill(status=200, body=f.read_bytes()) if f.is_file() else route.fulfill(status=404, json={"message": "Not Found"})
+        if url.endswith("/dispatches") and route.request.method == "POST":
+            payload = json.loads(json.loads(route.request.post_data)["inputs"]["commands_payload"])
+            if self.on_fetch and payload["commands"][0]["op"] == "fetch_attachments":
+                self.on_fetch(payload)
+        return super().handle(route)
+
+
+def test_real_mode_reader_decrypts_texts_and_fetches_attachments(browser, base_url, tmp_path):
+    from agent.bodies import FileStore
+    from agent.commands import parse_payload
+    from agent.execute_commands import fetch_attachments
+    from agent.state import Sealer
+    from scripts.fakes import FakeGmail, FakeMessage
+
+    passphrase = "made-up passphrase for tests"
+    sealer = Sealer(passphrase)
+    bodies = {k: sealer.seal_json(v) for k, v in DEMO_BODIES.items()}
+    fake = ReaderGitHub(sealer.seal_json(DEMO), bodies, tmp_path / "files")
+
+    def agent_fetch(payload):
+        # Second method: the agent's own validator and file writer produce what the browser reads.
+        _, commands = parse_payload(json.dumps(payload), {"account_1", "account_2"})
+        cmd = commands[0]
+        body = DEMO_BODIES[f"{cmd.account}:{cmd.ids[0]}"]
+        msg = FakeMessage(cmd.ids[0], "t1", "x <x@example.test>", "s", "", 0, body=body["text"],
+                          attachments=[(a["name"], a["mime"], f"secret bytes of {a['name']}".encode()) for a in body["attachments"]])
+        fetch_attachments(FakeGmail("me@example.test", [msg]), cmd.account, cmd.ids[0], FileStore(tmp_path, sealer))
+
+    fake.on_fetch = agent_fetch
+    page = new_page(browser, base_url)
+    page.evaluate(f"sessionStorage.setItem('mailean:passphrase', {json.dumps(passphrase)})")
+    page.route("https://api.github.com/**", fake.handle)
+    page.get_by_label("Repository").fill(REPO)
+    page.get_by_label("Fine-grained token").fill(TOKEN)
+    page.get_by_role("button", name="Connect", exact=True).click()
+    page.wait_for_selector("text=suggested actions ready", timeout=20000)
+    page.goto(base_url + "#/inbox")
+    key = open_reader_with_attachments(page)
+    body = DEMO_BODIES[key]
+    reader = page.locator("#reader")
+    assert first_line(body["text"]) in reader.locator(".mail-text").first.inner_text()
+    reader.get_by_role("button", name="Fetch attachments").click()
+    name = body["attachments"][0]["name"]
+    btn = reader.get_by_role("button", name=re.compile("^Download " + re.escape(name)))
+    btn.wait_for(timeout=60000)
+    assert len(fake.dispatched) == 1
+    sent = json.loads(fake.dispatched[0]["inputs"]["commands_payload"])
+    assert sent["commands"] == [{"account": key.split(":")[0], "op": "fetch_attachments", "ids": [key.split(":")[1]]}]
+    stored = list((tmp_path / "files").rglob("*.enc.json"))
+    assert stored and all(b"secret bytes" not in f.read_bytes() for f in stored)   # encrypted at rest
+    with page.expect_download() as dl:
+        btn.click()
+    assert Path(dl.value.path()).read_bytes() == f"secret bytes of {name}".encode()
+    assert dl.value.suggested_filename == name
+    # The text is cached on the device still encrypted.
+    cached = page.evaluate(f"""() => new Promise((res) => {{
+        const r = indexedDB.open('mailean'); r.onsuccess = () => {{
+            const q = r.result.transaction('kv').objectStore('kv').get({json.dumps('body:' + key)});
+            q.onsuccess = () => res(q.result); }}; }})""")
+    assert cached["enc"] == "mailean-aesgcm-v1" and "ct" in cached
+    # "No files fetched yet" is a 404 by design; the browser logs it. Nothing else may fail.
+    assert [e for e in page.errors if "status of 404" not in e] == []
+
+
+@pytest.mark.parametrize("width", [320, 390])
+def test_reader_on_phone_fills_the_screen_without_sideways_scroll(browser, base_url, width):
+    page = new_page(browser, base_url, width=width, height=780, demo=True)
+    page.wait_for_selector("text=suggested actions ready")
+    page.goto(base_url + "#/inbox")
+    open_reader_with_attachments(page)
+    box = page.locator("#reader").bounding_box()
+    assert round(box["width"]) == width and round(box["height"]) == 780
+    assert page.evaluate("document.querySelector('#reader .reader-body').scrollWidth") <= width
+    small = page.evaluate("""() => [...document.querySelectorAll('#reader button, #reader a.btn, #reader summary')]
+        .filter(e => e.offsetParent !== null)
+        .map(e => [e.textContent.trim().slice(0, 30) || e.getAttribute('aria-label'), Math.round(e.getBoundingClientRect().height), Math.round(e.getBoundingClientRect().width)])
+        .filter(([, h, w]) => h < 44 || w < 44)""")
+    assert small == [], small[:5]
+    assert page.errors == []
+
+
+def test_reader_accessibility_axe(browser, base_url):
+    if not AXE.exists():
+        pytest.skip("run npm ci to install axe-core")
+    for scheme in ("light", "dark"):
+        page = new_page(browser, base_url, scheme=scheme, demo=True, bypass_csp=True)
+        page.wait_for_selector("text=suggested actions ready")
+        page.goto(base_url + "#/inbox")
+        open_reader_with_attachments(page)
+        page.locator("#reader").get_by_role("button", name="Fetch attachments").click()
+        page.locator("#reader .download-list").wait_for()
+        page.add_script_tag(path=str(AXE))
+        res = page.evaluate("axe.run('#reader', {runOnly: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']})")
+        bad = [(v["id"], v["impact"], [n["target"] for n in v["nodes"]][:3]) for v in res["violations"] if v["impact"] in ("serious", "critical")]
+        assert bad == [], f"{scheme}: {bad}"

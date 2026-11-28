@@ -46,7 +46,7 @@ export class GitHub {
     this.timeoutMs = timeoutMs;
   }
 
-  async request(path, { method = 'GET', body, accept = 'application/vnd.github+json', what = 'reach GitHub', retries = 3, etag } = {}) {
+  async request(path, { method = 'GET', body, accept = 'application/vnd.github+json', what = 'reach GitHub', retries = 3, etag, binary = false } = {}) {
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
       const ctrl = new AbortController();
@@ -57,6 +57,7 @@ export class GitHub {
         if (etag) headers['If-None-Match'] = etag;
         const res = await this.fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal, cache: 'no-store' });
         if (res.status === 304) return { status: 304, etag };
+        if (res.ok && binary) return { status: res.status, buf: await res.arrayBuffer() };
         if (res.ok) {
           const text = res.status === 204 ? '' : await res.text();
           return { status: res.status, text, etag: res.headers.get('ETag') };
@@ -101,6 +102,36 @@ export class GitHub {
     return this.request(`/repos/${this.repo}/contents/${path}?ref=${STATE_BRANCH}`, {
       accept: 'application/vnd.github.raw+json', what: `read ${path}`, etag,
     });
+  }
+
+  /** Saved text of one message, or null when none is stored (404). */
+  async getBody(account, id) {
+    if (!/^[a-z0-9_]{1,32}$/.test(account) || !/^[0-9A-Za-z]{6,64}$/.test(id)) throw new GitHubError('Invalid message reference.');
+    try {
+      return JSON.parse((await this.getStateFile(`bodies/${account}/${id}.json`)).text);
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Manifest of attachments fetched earlier, or null. */
+  async getManifest(account, id) {
+    if (!/^[a-z0-9_]{1,32}$/.test(account) || !/^[0-9A-Za-z]{6,64}$/.test(id)) throw new GitHubError('Invalid message reference.');
+    try {
+      return JSON.parse((await this.getStateFile(`files/${account}/${id}/manifest.json`)).text);
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Raw bytes of a fetched attachment. */
+  async getFileBytes(account, id, file) {
+    const path = `files/${account}/${id}/${encodeURIComponent(file)}`;
+    return (await this.request(`/repos/${this.repo}/contents/${path}?ref=${STATE_BRANCH}`, {
+      accept: 'application/vnd.github.raw+json', what: `download ${file}`, binary: true,
+    })).buf;
   }
 
   async dispatch(payload) {

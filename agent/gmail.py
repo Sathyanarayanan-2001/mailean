@@ -17,7 +17,7 @@ MESSAGE_ID_RE = re.compile(r"^[0-9A-Za-z]{6,64}$")
 BATCH_MODIFY_LIMIT = 1000  # Gmail's documented maximum ids per batchModify call
 
 # Quota units per method (Gmail API reference, "Per-method quota usage").
-COST = {"get": 5, "list": 5, "batchModify": 50, "trash": 5, "labels.list": 1, "labels.create": 5, "profile": 1}
+COST = {"get": 5, "attachment": 5, "list": 5, "batchModify": 50, "trash": 5, "labels.list": 1, "labels.create": 5, "profile": 1}
 
 
 class AuthError(Exception):
@@ -146,9 +146,24 @@ class Gmail:
     def get_metadata(self, message_id: str, extra_headers: Iterable[str] = ()) -> dict:
         if not MESSAGE_ID_RE.match(message_id):
             raise ValueError("invalid message id")
-        names = ["From", "Subject", "Date", "List-Unsubscribe", "List-Unsubscribe-Post", *extra_headers]
+        names = ["From", "To", "Cc", "Subject", "Date", "Message-ID", "List-Unsubscribe", "List-Unsubscribe-Post", *extra_headers]
         query = urllib.parse.urlencode([("format", "metadata")] + [("metadataHeaders", n) for n in names])
         return self._call("GET", f"/messages/{message_id}?{query}", "get")
+
+    def get_full(self, message_id: str) -> dict:
+        """Whole message structure: headers, text parts inline, attachments as ids (same quota as metadata)."""
+        if not MESSAGE_ID_RE.match(message_id):
+            raise ValueError("invalid message id")
+        return self._call("GET", f"/messages/{message_id}?format=full", "get")
+
+    def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        if not MESSAGE_ID_RE.match(message_id):
+            raise ValueError("invalid message id")
+        # Attachment ids are long base64url strings from Gmail itself; quote them for the path.
+        aid = urllib.parse.quote(attachment_id, safe="")
+        data = self._call("GET", f"/messages/{message_id}/attachments/{aid}", "attachment", timeout=60)
+        from .bodies import b64url_decode
+        return b64url_decode(str(data.get("data", "")))
 
     def batch_modify(self, ids: list[str], add: list[str] | None = None, remove: list[str] | None = None) -> int:
         done = 0

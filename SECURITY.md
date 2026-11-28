@@ -13,6 +13,8 @@ Please do not open a public issue for a security problem. Use GitHub's **Report 
 | Gmail refresh tokens and OAuth client | GitHub secret `MAILEAN_ACCOUNTS` (private repo) | Encrypted by GitHub; read only by workflows; access tokens masked in logs (`::add-mask::`). |
 | Anthropic API key | GitHub secret `ANTHROPIC_API_KEY` | As above. Set a spend limit in the Anthropic Console. |
 | Email summaries | `mailean-state` branch of the private repo | Private repository; workflows refuse to run if it is public; history squashed each sync; optional AES-256-GCM (`MAILEAN_STATE_PASSPHRASE`). |
+| Email text and recipients | `bodies/` on the same branch | As above. Deleted at the next sync after the email leaves the inbox. Turn off with `MAILEAN_STORE_BODIES=0`. Never sent to Claude. |
+| Attachment files | `files/` on the same branch, only after **Fetch attachments** | As above. Deleted after 7 days or when the email leaves the inbox; 15 MB per file. |
 | GitHub fine-grained token | Your browser (localStorage, or this tab only) | One repository; Contents read, Actions read and write; set an expiry. |
 
 ## Known risks you should understand
@@ -22,7 +24,9 @@ Please do not open a public issue for a security problem. Use GitHub's **Report 
 3. **Unverified OAuth app.** Publishing your own app as "In production" without verification is meant for personal use only. Do not share the client with others.
 4. **Prompt injection.** Emails may try to manipulate the triage. Model output is limited to labels and summaries, and it can never execute an action. Suspicious rows are flagged and are never auto-staged.
 5. **Unsubscribe links** come from the sender. The agent only POSTs to public `https` hosts, refuses IP literals and local names, and does not follow redirects.
-6. **Workflow inputs** reach the agent through environment variables, never through shell text. The payload is validated against a strict schema with an allow-list of operations.
+6. **Hostile email content in the reader.** Email text is shown as plain text, never as HTML, so it cannot run script or load remote images (which also blocks tracking pixels). A link is clickable only for `http` and `https`, its visible text is always the real address, and it opens with `noopener noreferrer`. In emails flagged as suspicious, links are not clickable at all.
+7. **Malicious attachments.** Files download as `application/octet-stream` with a cleaned name, so the browser saves them instead of opening them. A file from a suspicious email needs a second confirmation. Scan files before opening them; Mailean does not scan.
+8. **Workflow inputs** reach the agent through environment variables, never through shell text. The payload is validated against a strict schema with an allow-list of operations.
 
 ## Supply chain
 

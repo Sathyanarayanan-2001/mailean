@@ -1,6 +1,6 @@
 # Mailean setup guide
 
-Version 1.0.3 · 28/11/2026
+Version 1.1.0 · 28/11/2026
 
 This guide takes about 30 minutes. Each step is one action. Do the parts in order.
 
@@ -132,6 +132,16 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 5. Press **Connect**. Your inbox appears.
 6. On your phone, open the same address, then choose **Add to Home screen** (Android: browser menu; iPhone: Share button).
 
+### Read an email and its attachments
+
+1. In **Inbox**, click or tap the subject of an email. The reader opens with the full text, the sender and recipients, and the attachment list. Older messages in the conversation sit below; open one to read it.
+2. Use **Previous** and **Next**, or the left and right arrow keys, to move through the list.
+3. Press **Archive**, **Trash**, **Move**, **Read** or **Star** to queue that action. The reader moves to the next email. Nothing changes in Gmail until you press **Execute via agent** in the queue.
+4. To get the files, press **Fetch attachments**. The agent copies that email's files into your private repository, which takes about a minute. Then press **Download** for each file. The private repository keeps them for 7 days. Files over 15 MB, or over 25 MB for one email, stay in Gmail.
+5. **Open in Gmail** opens the same email in Gmail on the web. In the Gmail phone app, press **Copy Gmail search** and paste the text into Gmail's search box.
+
+The text of each email is saved at sync time. Emails that arrived after the last sync show a note until the next one. Long emails are cut at 20,000 characters; open them in Gmail for the rest.
+
 ## H. Optional settings (repository variables)
 
 | Variable | Default | What it does |
@@ -140,10 +150,13 @@ This guide takes about 30 minutes. Each step is one action. Do the parts in orde
 | `MAILEAN_QUERY` | `in:inbox` | Gmail search for what to triage, for example `in:inbox newer_than:30d`. |
 | `MAILEAN_MAX_PER_ACCOUNT` | `300` | The most messages read per account per sync (1 to 2000). |
 | `MAILEAN_STORE_SNIPPETS` | not set | Set to `1` to keep 300-character snippets in the state file. |
+| `MAILEAN_STORE_BODIES` | on | Set to `0` to stop saving email text for the reader. The next sync deletes the saved texts. |
 
 | Secret | What it does |
 |---|---|
-| `MAILEAN_STATE_PASSPHRASE` | Encrypts the state file (at least 12 characters). Enter the same passphrase in the dashboard under **Settings → Encrypted state**. |
+| `MAILEAN_STATE_PASSPHRASE` | Encrypts the state file, the saved email text and fetched attachments (at least 12 characters). Recommended, because email text is now stored. Enter the same passphrase in the dashboard under **Settings → Encrypted state**. |
+
+The first sync after you turn on email text (version 1.1.0 or later) reads the text of every email in the inbox, so it takes longer once. Later syncs read only new emails.
 
 To change how often triage runs, edit the `cron` line in `.github/workflows/scheduled-triage.yml`. GitHub uses UTC, and scheduled runs can start a few minutes late. A private repository uses GitHub Actions minutes: 6 syncs a day at about 2 minutes each is roughly 360 minutes a month. Check your plan's allowance on GitHub's billing page.
 
@@ -171,3 +184,7 @@ To change how often triage runs, edit the `cron` line in `.github/workflows/sche
 | A `mailean-keys` folder is in the repository | The keys folder sat inside the code folder when it was uploaded. | Delete the folder from the repository. Then, in Google Auth Platform → **Clients**, delete `mailean-desktop` and create a new Desktop client (part A, steps 18 to 20), so the uploaded secret no longer works. |
 | Execute waits at "Waiting for GitHub to start the run" | Actions is busy, or `MAILEAN_ROLE` is missing. | Check the **Actions** tab. Make sure the variable is set in the private repository. |
 | "The token is not allowed to …" | Token permissions are too narrow. | Part E, steps 3 to 5. |
+| "The full text of this email is not saved yet" | The email arrived after the last sync. | Wait for the next sync, or open **Activity** and press **Run sync now**. |
+| "Saving email text is turned off" | The variable `MAILEAN_STORE_BODIES` is `0`. | Delete the variable, or set it to `1`, then run a sync. |
+| "Wrong passphrase" when reading or downloading | The dashboard passphrase differs from `MAILEAN_STATE_PASSPHRASE`. | **Settings → Encrypted state**: enter the same passphrase. |
+| **Fetch attachments** ends with "The run ended with failure" | The agent could not read the email, for example because it left the inbox. | Open **Activity**, then the run on GitHub, for the reason. Use **Open in Gmail** instead. |

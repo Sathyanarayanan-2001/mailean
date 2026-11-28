@@ -15,13 +15,14 @@ from .config import ACCOUNT_ID_RE
 from .gmail import MESSAGE_ID_RE
 from .sanitize import is_valid_email
 
-OPS = ("delete", "archive", "move_to_label", "mark_read", "star", "bulk_trash_sender", "unsubscribe")
+OPS = ("delete", "archive", "move_to_label", "mark_read", "star", "bulk_trash_sender", "unsubscribe", "fetch_attachments")
 BATCH_ID_RE = re.compile(r"^b-\d{8}-\d{6}-[a-z0-9]{4,12}$")
 SYSTEM_LABELS = {"inbox", "spam", "trash", "unread", "starred", "important", "sent", "draft", "chat"}
 MAX_PAYLOAD_CHARS = 65_000
 MAX_COMMANDS = 200
 MAX_IDS_TOTAL = 5_000
 MAX_UNSUBSCRIBE = 50
+MAX_FETCH = 5  # messages whose attachments one run may fetch
 BULK_TRASH_CAP = 1_000
 
 
@@ -107,6 +108,8 @@ def parse_payload(raw: str, known_accounts: set[str]) -> tuple[str, list[Command
             ids = tuple(dict.fromkeys(raw_ids))  # de-duplicate, keep order
             if op == "unsubscribe" and len(ids) > MAX_UNSUBSCRIBE:
                 raise PayloadError(f"{where}: unsubscribe is limited to {MAX_UNSUBSCRIBE} messages per run.")
+            if op == "fetch_attachments" and len(ids) > MAX_FETCH:
+                raise PayloadError(f"{where}: fetch_attachments is limited to {MAX_FETCH} messages per run.")
             total_ids += len(ids)
         if op == "move_to_label":
             label = validate_label(item.get("label"))

@@ -8,17 +8,17 @@ import {
   isoWeek, cwLabel, deviceTimeZone, localParts, parseDayFirst, zonedMidnight, plural, safeUrl,
 } from './js/format.js';
 import { validateState, indexState, filterMessages, sortMessages, dashboardStats, suggestionItems } from './js/model.js';
-import { OP_LABELS, DESTRUCTIVE, buildPayloads, itemError, summarise, validateLabel } from './js/commands.js';
-import { ls, session, kvGet, kvSet, kvDelete, RecordStore } from './js/store.js';
+import { OP_LABELS, DESTRUCTIVE, buildPayloads, itemError, summarise, validateLabel, newBatchId } from './js/commands.js';
+import { ls, session, kvGet, kvSet, kvDelete, kvDeletePrefix, RecordStore } from './js/store.js';
 import { FolderSync, directoryAdapter, STATUS_TEXT } from './js/sync.js';
 import { GitHub, GitHubError, validateConnection, COMMANDS_WORKFLOW } from './js/github.js';
-import { decryptState, isEncrypted, forgetKeys } from './js/crypto.js';
+import { decryptState, decryptBytes, isEncrypted, forgetKeys } from './js/crypto.js';
 import { chartCard } from './js/charts.js';
 import { exportInboxCsv } from './js/exporter.js';
 import { buildImportPreview } from './js/csv.js';
 import { liveEntries } from './js/merge.js';
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.1.0';
 export const RELEASE_DATE = '28/11/2026';
 const PAGE = 100; // rows rendered at a time keeps the DOM light on phones
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -187,7 +187,11 @@ async function setState(raw, { fromCache = false } = {}) {
   S.dropped = res.dropped;
   S.index = indexState(S.state);
   S.loadError = null;
-  if (!fromCache) await pruneHandled();
+  if (!fromCache) {
+    await pruneHandled();
+    // Keep cached email texts only for emails still in the inbox.
+    if (!S.demo) await forgetBodies(new Set(S.state.messages.flatMap((m) => m.message_ids.map((id) => `body:${m.account}:${id}`))));
+  }
   return true;
 }
 
@@ -376,6 +380,7 @@ function viewConnect() {
         }
         S.state = null;
         S.etag = null;
+        await forgetBodies();
         toast('Connected. Loading your inbox…');
         go('home');
         refresh({ quiet: true });
@@ -615,7 +620,8 @@ function viewInbox() {
     const btn = e.target.closest('button[data-op]');
     if (!btn) return;
     const m = S.index.byKey.get(btn.closest('li').dataset.key);
-    if (m) rowAction(btn.dataset.op, m, btn.dataset.label);
+    if (m && btn.dataset.op === 'read') openReader(m, currentRows());
+    else if (m) rowAction(btn.dataset.op, m, btn.dataset.label);
   });
   list.addEventListener('change', (e) => {
     if (!e.target.matches('input.row-check')) return;
@@ -641,7 +647,7 @@ function mailRow(m) {
       h('span', { class: 'from-addr muted small', text: m.sender_email }),
       S.state.accounts.length > 1 ? h('span', { class: 'acct-tag small', text: accountLabel(m.account) }) : null),
     h('div', { class: 'cell-subject' },
-      h('span', { class: 'subject', text: m.subject }),
+      h('button', { type: 'button', class: 'subject', 'data-op': 'read', title: 'Read this email' }, m.subject || '(no subject)'),
       m.message_ids.length > 1 ? h('span', { class: 'muted small', text: ` (${m.message_ids.length})` }) : null,
       // Rule-based summaries just repeat the subject; show a summary only when it adds something.
       m.summary && m.summary !== m.subject && m.summary !== `${m.sender_name}: ${m.subject}` ? h('p', { class: 'summary muted', text: m.summary }) : null,
@@ -649,6 +655,7 @@ function mailRow(m) {
         m.suspicious ? h('span', { class: 'tag danger', title: 'This email contains text that tries to instruct an AI, or looks like phishing. Review it in Gmail before acting.' }, icon(ICONS.alert), 'Suspicious') : null,
         m.stale ? h('span', { class: 'tag warn', text: 'Out of date' }) : null,
         m.amount_paise !== null ? h('span', { class: 'tag num', text: formatRupees(m.amount_paise) }) : null,
+        m.attachments ? h('span', { class: 'tag', title: `${plural(m.attachments, 'attachment')}. Open the email to see and fetch them.` }, icon(ICONS.clip), h('span', { class: 'num', text: formatCount(m.attachments) }), h('span', { class: 'sr-only', text: m.attachments === 1 ? ' attachment' : ' attachments' })) : null,
         h('span', { class: `tag pri p${m.priority}`, text: `P${m.priority}`, title: `Priority ${m.priority} of 5` }),
         queued ? h('span', { class: 'tag queued', text: `Queued: ${OP_LABELS[queued.op]}` }) : null,
         sugOp && !m.suspicious && !queued ? h('button', { type: 'button', class: 'btn sm suggest', 'data-op': sugOp, 'data-label': m.suggested_label || '', 'aria-label': `Suggested: ${OP_LABELS[sugOp]}${m.suggested_label ? ' to ' + m.suggested_label : ''}, for ${m.subject}` },
@@ -711,6 +718,344 @@ async function unsubscribeRow(m) {
     body: h('p', {}, 'This sender does not support one-click unsubscribe, so the agent cannot do it for you. Open the sender’s own page: ',
       h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', text: new URL(link).host || 'email link' }), '.'),
   });
+}
+
+// ------------------------------------------------------------------ email reader
+
+const bodyMemo = new Map(); // "account:id" -> checked text (decrypted), kept for this tab only
+// The reader's helpers load on first use, which keeps them off the first page load.
+let MT = null;
+const readerHelpers = async () => (MT ||= await import('./js/mailtext.js'));
+
+async function demoBodies() {
+  if (!S.demoBodies) {
+    const res = await fetch('demo-bodies.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`The demo emails could not be loaded (HTTP ${res.status}).`);
+    S.demoBodies = await res.json();
+  }
+  return S.demoBodies;
+}
+
+/**
+ * Saved text of one message: from memory, then this device, then GitHub.
+ * An encrypted text is cached on the device still encrypted and decrypted in memory only.
+ */
+async function loadBody(account, id) {
+  await readerHelpers();
+  const key = `${account}:${id}`;
+  if (bodyMemo.has(key)) return bodyMemo.get(key);
+  let raw;
+  if (S.demo) raw = (await demoBodies())[key] || null;
+  else {
+    raw = await kvGet(`body:${key}`);
+    if (!raw) {
+      raw = await S.gh.getBody(account, id);
+      if (raw) await kvSet(`body:${key}`, raw);
+    }
+    if (raw && isEncrypted(raw)) raw = JSON.parse(new TextDecoder().decode(await decryptBytes(raw, session.get('passphrase'))));
+  }
+  const body = MT.validateBody(raw);
+  if (body) bodyMemo.set(key, body); // a missing text can arrive with the next sync, so a miss is not remembered
+  return body;
+}
+
+async function forgetBodies(keep = null) {
+  bodyMemo.clear();
+  S.demoBodies = null;
+  await kvDeletePrefix('body:', keep);
+}
+
+const downloadName = (name) => String(name).replace(/[\\/:*?"<>|\u0000-\u001f\u007f]+/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'attachment';
+
+function saveBytes(name, bytes) {
+  // application/octet-stream makes every browser save the file instead of opening it.
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+  const a = h('a', { href: url, download: downloadName(name) });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function mailText(text, linksLive) {
+  const box = h('div', { class: 'mail-text', tabindex: '0', role: 'region', 'aria-label': 'Email text' });
+  for (const seg of MT.linkSegments(text)) {
+    if (seg.type === 'link' && linksLive) box.append(h('a', { href: seg.href, target: '_blank', rel: 'noopener noreferrer', text: seg.value }));
+    else box.append(seg.value);
+  }
+  return box;
+}
+
+function readableDate(raw) {
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? raw : formatDateTime(new Date(t), S.tz);
+}
+
+async function fileBytes(m, id, f) {
+  if (S.demo) return new TextEncoder().encode(`Made-up demo file "${f.name}". In real use this is the attachment itself.\n`);
+  const buf = await S.gh.getFileBytes(m.account, id, f.file);
+  if (!f.encrypted) return new Uint8Array(buf);
+  return decryptBytes(JSON.parse(new TextDecoder().decode(buf)), session.get('passphrase'));
+}
+
+function renderDownloads(area, m, id, manifest) {
+  clear(area);
+  const files = manifest.files;
+  append(area, [h('p', { class: 'muted small', text: manifest.fetched_at ? `Fetched ${readableDate(manifest.fetched_at)}. Files are kept in your private repository for 7 days.` : 'Ready to download.' }),
+    h('ul', { class: 'download-list' }, files.map((f) => h('li', {},
+      f.skipped || (!f.file && !S.demo)
+        ? h('p', { class: 'small' }, h('strong', { text: f.name }), `: not fetched. ${f.skipped || 'The file name was not valid.'} Open the email in Gmail to get it.`)
+        : h('button', { type: 'button', class: 'btn sm', onclick: async (e) => {
+          const b = e.currentTarget;
+          if (m.suspicious) {
+            const ok = await dialog({
+              title: 'Download from a suspicious email?',
+              body: h('p', { text: `This email was flagged as suspicious. "${f.name}" may be harmful. Download it only if you trust the sender, and scan it before opening.` }),
+              actions: [{ label: 'Cancel', value: null, kind: 'ghost' }, { label: 'Download anyway', value: 'ok', kind: 'danger' }],
+            });
+            if (ok !== 'ok') return;
+          }
+          b.disabled = true;
+          try {
+            saveBytes(f.name, await fileBytes(m, id, f));
+          } catch (err) {
+            toast(`"${f.name}" could not be downloaded: ${err.message || err}`, 'error', 9000);
+          } finally {
+            b.disabled = false;
+          }
+        } }, icon(ICONS.download), `Download ${f.name}`, h('span', { class: 'muted', text: ` (${MT.formatBytes(f.size)})` })))))]);
+}
+
+async function fetchAttachments(m, id, area, body) {
+  const status = h('p', { class: 'small', role: 'status' });
+  clear(area);
+  area.append(status);
+  const say = (t, url) => {
+    clear(status);
+    append(status, [t, url ? ' ' : null, url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: 'See the run on GitHub' }) : null]);
+  };
+  try {
+    let manifest;
+    if (S.demo) {
+      say('Asking the agent to fetch the files (demo)…');
+      await wait(900);
+      manifest = { fetched_at: new Date().toISOString(), files: body.attachments.map((a) => ({ ...a, file: null, encrypted: false, skipped: null })) };
+    } else {
+      if (!navigator.onLine) throw new Error('You are offline. Try again when you are back online.');
+      const batch = newBatchId();
+      const since = new Date(Date.now() - 60_000).toISOString().slice(0, 19) + 'Z';
+      say('Sending the request to GitHub…');
+      await S.gh.dispatch({ v: 1, batch_id: batch, commands: [{ account: m.account, op: 'fetch_attachments', ids: [id] }] });
+      await S.records.put(`b:${batch}`, { id: batch, status: 'queued', at: Date.now(), summary: 'Fetch attachments of 1 email' });
+      say('Waiting for GitHub to start the run…');
+      let run = null;
+      for (let t = 0; t < 40 && !run; t++) {
+        await wait(Math.min(3000 + t * 500, 8000));
+        run = await S.gh.findRun(batch, since).catch(() => null);
+      }
+      if (!run) throw new Error('GitHub did not start the run within a few minutes. Check the Actions tab in your repository, then try again.');
+      say('The agent is copying the files. This usually takes about a minute…', run.html_url);
+      const deadline = Date.now() + 10 * 60_000;
+      while (run.status !== 'completed' && Date.now() < deadline) {
+        await wait(5000);
+        run = await S.gh.getRun(run.id).catch(() => run);
+      }
+      if (run.status !== 'completed') throw new Error('The run is taking longer than 10 minutes. Open this email again later to download the files.');
+      await S.records.put(`b:${batch}`, { id: batch, status: run.conclusion === 'success' ? 'ok' : 'failed', at: Date.now(), summary: 'Fetch attachments of 1 email', runUrl: run.html_url });
+      if (run.conclusion !== 'success') throw new Error(`The run ended with "${run.conclusion}". Open Activity, then the run on GitHub, for the reason.`);
+      for (let t = 0; t < 3 && !manifest; t++) {
+        manifest = MT.validateManifest(await S.gh.getManifest(m.account, id).catch(() => null));
+        if (!manifest) await wait(3000);
+      }
+      if (!manifest) throw new Error('The run finished but no files were found. Open Activity for the run, then try again.');
+    }
+    renderDownloads(area, m, id, manifest);
+  } catch (err) {
+    say(err.message || String(err));
+    status.classList.add('error-text');
+    area.append(h('button', { type: 'button', class: 'btn sm', onclick: () => fetchAttachments(m, id, area, body) }, 'Try again'));
+  }
+}
+
+function attachmentBlock(m, id, body) {
+  const area = h('div', { class: 'attach-actions' });
+  const offer = () => {
+    clear(area);
+    append(area, [
+      h('button', { type: 'button', class: 'btn sm', disabled: !S.demo && !S.gh, onclick: () => fetchAttachments(m, id, area, body) }, icon(ICONS.download), 'Fetch attachments'),
+      h('p', { class: 'hint', text: 'The agent copies the files into your private repository, then you download them here. Files are deleted after 7 days. Files over 15 MB stay in Gmail.' })]);
+  };
+  if (S.demo) offer();
+  else {
+    area.append(h('p', { class: 'muted small', role: 'status', text: 'Checking for files fetched earlier…' }));
+    S.gh.getManifest(m.account, id).then((raw) => {
+      const man = MT.validateManifest(raw);
+      if (man) renderDownloads(area, m, id, man);
+      else offer();
+    }).catch(offer);
+  }
+  return h('section', { class: 'attach', 'aria-label': 'Attachments' },
+    h('h3', { class: 'h-small', text: `Attachments (${body.attachments.length})` }),
+    h('ul', { class: 'attach-list' }, body.attachments.map((a) => h('li', {}, icon(ICONS.clip),
+      h('span', { class: 'attach-name', text: a.name }), h('span', { class: 'muted small', text: `${a.mime || 'file'}, ${MT.formatBytes(a.size)}` })))),
+    area);
+}
+
+function bodyView(m, id, body, { newest }) {
+  if (!body) {
+    const off = S.state && S.state.bodies && !S.state.bodies.stored && !S.demo;
+    return h('div', { class: 'notice' }, h('p', { text: off
+      ? 'Saving email text is turned off for this repository (the MAILEAN_STORE_BODIES variable is 0). Open the email in Gmail to read it.'
+      : 'The full text of this email is not saved yet. The agent saves the text of new emails at each sync, so it appears after the next one. Until then, open it in Gmail.' }));
+  }
+  const facts = [['From', body.from], ['To', body.to], ['Cc', body.cc], ['Date', body.date ? readableDate(body.date) : '']].filter(([, v]) => v);
+  return h('div', { class: 'msg' },
+    newest ? null : h('dl', { class: 'mail-meta' }, facts.map(([k, v]) => h('div', {}, h('dt', { text: k }), h('dd', { text: v })))),
+    m.suspicious ? h('p', { class: 'notice warn small' }, icon(ICONS.alert), 'Links in this email are shown as plain text because it was flagged as suspicious.') : null,
+    body.text.trim() ? mailText(body.text, !m.suspicious) : h('p', { class: 'muted', text: 'This email has no text, only attachments or images.' }),
+    body.truncated ? h('p', { class: 'muted small', text: 'This email is long; the saved copy stops part-way. Open it in Gmail for the rest.' }) : null,
+    body.attachments.length ? attachmentBlock(m, id, body) : null);
+}
+
+function loadInto(holder, m, id, opts) {
+  const status = h('p', { class: 'muted', role: 'status', text: 'Loading the email text…' });
+  clear(holder);
+  holder.append(status);
+  return loadBody(m.account, id).then((b) => {
+    if (!holder.isConnected) return null;
+    clear(holder);
+    holder.append(bodyView(m, id, b, opts));
+    return b;
+  }).catch((err) => {
+    status.textContent = `The email text could not be loaded. ${err.message || err}`;
+    status.className = 'error-text';
+    return null;
+  });
+}
+
+async function openReader(start, rows) {
+  if (!rows.length) return;
+  try {
+    await readerHelpers();
+  } catch {
+    toast('The reader could not be loaded. Check your connection and try again.', 'error');
+    return;
+  }
+  const dlg = $('#reader');
+  let pos = Math.max(0, rows.findIndex((r) => r.key === start.key));
+  let changed = false;
+  const title = h('h2', { id: 'reader-title', class: 'reader-title', tabindex: '-1' });
+  const counter = h('span', { class: 'muted small num' });
+  const prev = h('button', { type: 'button', class: 'btn sm ghost', onclick: () => move(-1) }, '‹ Previous');
+  const next = h('button', { type: 'button', class: 'btn sm ghost', onclick: () => move(1) }, 'Next ›');
+  const content = h('div', { class: 'dlg-body reader-body' });
+  const foot = h('div', { class: 'dlg-actions reader-actions' });
+  clear(dlg);
+  dlg.append(h('div', { class: 'dlg-inner' },
+    h('div', { class: 'dlg-head' }, title, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Close the email', onclick: () => dlg.close() }, icon(ICONS.close))),
+    h('nav', { class: 'reader-nav', 'aria-label': 'Move between emails' }, prev, counter, next),
+    content, foot));
+  dlg.setAttribute('aria-labelledby', 'reader-title');
+  dlg.onclose = () => {
+    dlg.onkeydown = null;
+    clear(dlg);
+    if (changed) render();
+  };
+  dlg.onkeydown = (e) => {
+    if (e.target.closest('input, select, textarea') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowRight' || e.key === 'j') move(1);
+    else if (e.key === 'ArrowLeft' || e.key === 'k') move(-1);
+  };
+
+  function move(d) {
+    const to = pos + d;
+    if (to < 0 || to >= rows.length) return;
+    pos = to;
+    show();
+    if (document.activeElement && document.activeElement.disabled) title.focus();
+  }
+
+  async function act(op) {
+    const m = rows[pos];
+    let label = null;
+    if (op === 'move_to_label') {
+      label = await askLabel(1);
+      if (!label) return;
+    }
+    await stageRows([m], op, label);
+    changed = true;
+    renderChrome(); // queue count; the list itself refreshes when the reader closes
+    if (pos < rows.length - 1) move(1);
+    else dlg.close();
+  }
+
+  function show() {
+    const m = rows[pos];
+    const acct = (S.index && S.index.accounts.get(m.account)) || { email: '' };
+    title.textContent = m.subject || '(no subject)';
+    counter.textContent = `${formatCount(pos + 1)} of ${formatCount(rows.length)}`;
+    prev.disabled = pos === 0;
+    next.disabled = pos >= rows.length - 1;
+    const queued = queuedOpFor(m.key);
+    const ids = MT.conversationOrder(m);
+    clear(content);
+    content.scrollTop = 0;
+    const fromRow = h('div', {}, h('dt', { text: 'From' }), h('dd', { text: m.sender_email ? `${m.sender_name} <${m.sender_email}>` : m.sender_name }));
+    append(content, [
+      h('dl', { class: 'mail-meta' }, fromRow,
+        h('div', {}, h('dt', { text: 'Date' }), h('dd', {}, h('time', { datetime: m.date, text: formatDateTime(new Date(m.date), S.tz) }))),
+        S.state.accounts.length > 1 ? h('div', {}, h('dt', { text: 'Account' }), h('dd', { text: accountLabel(m.account) })) : null),
+      h('div', { class: 'tags' }, groupBadge(m.group),
+        h('span', { class: `tag pri p${m.priority}`, text: `P${m.priority}`, title: `Priority ${m.priority} of 5` }),
+        m.amount_paise !== null ? h('span', { class: 'tag num', text: formatRupees(m.amount_paise) }) : null,
+        m.suspicious ? h('span', { class: 'tag danger' }, icon(ICONS.alert), 'Suspicious') : null,
+        queued ? h('span', { class: 'tag queued', text: `Queued: ${OP_LABELS[queued.op]}` }) : null),
+      m.summary && m.summary !== m.subject && m.summary !== `${m.sender_name}: ${m.subject}` ? h('p', { class: 'summary muted', text: `Summary: ${m.summary}` }) : null]);
+    const newest = h('div', { class: 'msg-holder' });
+    content.append(newest);
+    loadInto(newest, m, ids[0], { newest: true }).then((b) => {
+      // Recipients sit with the sender once the saved text has arrived.
+      if (b && fromRow.isConnected) fromRow.after(...[['To', b.to], ['Cc', b.cc]].filter(([, v]) => v).map(([k, v]) => h('div', {}, h('dt', { text: k }), h('dd', { text: v }))));
+    });
+    const older = ids.slice(1);
+    if (older.length) {
+      append(content, [h('h3', { class: 'h-small', text: `Earlier in this conversation (${older.length}${m.message_ids.length > ids.length ? ` of ${m.message_ids.length - 1}` : ''})` }),
+        older.map((id, i) => {
+          const holder = h('div', { class: 'msg-holder' });
+          const label = h('span', { text: `Earlier message ${i + 1}` });
+          const d = h('details', { class: 'earlier' }, h('summary', {}, label), holder);
+          d.addEventListener('toggle', () => {
+            if (!d.open || holder.dataset.loaded) return;
+            holder.dataset.loaded = '1';
+            loadInto(holder, m, id, { newest: false }).then((b) => {
+              if (b) label.textContent = `${b.from || 'Unknown sender'}${b.date ? ` · ${readableDate(b.date)}` : ''}`;
+            });
+          });
+          return d;
+        })]);
+    }
+    const search = MT.gmailSearch(m.message_id_header);
+    const act1 = (op, ic, text) => h('button', { type: 'button', class: 'btn sm', onclick: () => act(op) }, icon(ic), text);
+    clear(foot);
+    append(foot, [
+      h('div', { class: 'row wrap' },
+        h('a', { class: 'btn sm', href: MT.gmailLink({ email: acct.email, messageIdHeader: m.message_id_header, id: m.id }), target: '_blank', rel: 'noopener noreferrer' }, icon(ICONS.external), 'Open in Gmail'),
+        search ? h('button', { type: 'button', class: 'btn sm ghost', onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(search);
+            toast('Copied. Paste it into the Gmail search box, including in the Gmail app.');
+          } catch {
+            toast(`Copy did not work here. Search Gmail for: ${search}`, 'info', 12000);
+          }
+        } }, 'Copy Gmail search') : null),
+      h('div', { class: 'row wrap reader-stage' },
+        act1('archive', ICONS.archive, 'Archive'), act1('delete', ICONS.trash, 'Trash'), act1('move_to_label', ICONS.label, 'Move'),
+        act1('mark_read', ICONS.read, 'Read'), act1('star', ICONS.star, 'Star'))]);
+  }
+
+  show();
+  dlg.showModal();
+  title.focus();
 }
 
 // ------------------------------------------------------------------ dashboard view
@@ -1008,7 +1353,8 @@ function viewSettings() {
         S.demo = false;
         S.state = null;
         await kvDelete('state');
-        toast('Disconnected. The token and cached inbox were removed from this device.');
+        await forgetBodies();
+        toast('Disconnected. The token, cached inbox and cached email texts were removed from this device.');
         go('connect');
       } }, S.demo ? 'Leave demo' : 'Forget token and cached inbox') : null)));
 
@@ -1049,9 +1395,9 @@ function viewSettings() {
       : h('p', { class: 'hint', text: 'This browser cannot open folders (phones and Firefox cannot). Your data is saved on this device. Use Chrome or Edge on a computer for folder sync.' })));
 
   page.append(h('section', { class: 'card stack', 'aria-labelledby': 's-data' }, h('h2', { id: 's-data', text: 'Data on this device' }),
-    h('p', { class: 'muted', text: 'The last inbox you loaded is kept here so the app opens offline. Clearing it does not touch Gmail or GitHub.' }),
+    h('p', { class: 'muted', text: 'The last inbox you loaded, and the email texts you opened, are kept here so the app opens offline. Encrypted texts stay encrypted. Clearing them does not touch Gmail or GitHub.' }),
     h('div', { class: 'row wrap' },
-      h('button', { type: 'button', class: 'btn', onclick: async () => { await kvDelete('state'); S.state = null; toast('Cached inbox cleared.'); render(); } }, 'Clear cached inbox'),
+      h('button', { type: 'button', class: 'btn', onclick: async () => { await kvDelete('state'); await forgetBodies(); S.state = null; toast('Cached inbox and email texts cleared.'); render(); } }, 'Clear cached inbox'),
       h('button', { type: 'button', class: 'btn ghost', onclick: () => { ls.set('quickstart', false); quickStart(); } }, 'Show quick start again'))));
 
   page.append(h('section', { class: 'card stack', 'aria-labelledby': 's-about' }, h('h2', { id: 's-about', text: 'About' }),
@@ -1088,6 +1434,7 @@ function viewGuide() {
         'Open this page, enter owner/gmail-command-center and the token, and press Connect.')),
     sec('g-daily', 'Daily use',
       ul(h('span', {}, h('strong', { text: 'Inbox: ' }), 'pick an account and a group. Tick conversations and choose Archive, Trash, Move, Read or Star. Or press the suggested action on a row.'),
+        h('span', {}, h('strong', { text: 'Read an email: ' }), 'click its subject. You see the full text, the earlier messages and the attachments. Previous and Next (or the arrow keys) move through the list; the action buttons queue and move on. "Fetch attachments" has the agent copy the files (about a minute), then you download them. "Open in Gmail" opens the same email in Gmail.'),
         h('span', {}, h('strong', { text: 'Queue: ' }), 'nothing changes in Gmail until you press "Execute via agent". You can remove items first.'),
         h('span', {}, h('strong', { text: 'Cleanup: ' }), 'clear out a noisy sender in one go, or unsubscribe.'),
         h('span', {}, h('strong', { text: 'Dashboard: ' }), 'see counts by group, week, account and priority, and receipts per month. Press Table on any chart to read the numbers.'),
@@ -1104,7 +1451,9 @@ function viewGuide() {
       ul('Group: Receipts & Finance. Priority 3.', 'Suggested action: Move to label "Receipts".', 'Amount: ₹2,499.00, stored as 249900 paise, added to FY 2026-27, month Nov.', 'Reference: 627153940211, kept as text so Excel shows every digit.')),
     sec('g-privacy', 'Privacy and safety',
       ul('Your email data lives only in your private repository, on a branch called mailean-state. Each sync replaces it, so old subjects do not pile up in history.',
-        'Only sender, subject, date and labels go to Claude, never full bodies. Codes such as OTPs are masked.',
+        'Only sender, subject, date, labels and a short snippet go to Claude, never the full text or attachments. Codes such as OTPs are masked.',
+        'The text of each inbox email is kept in your private repository so you can read it here. It is deleted after the email leaves the inbox. Attachments are copied only when you ask, and deleted after 7 days. Set a passphrase to encrypt both.',
+        'In the reader, links show their real address and open in a new tab. Suspicious emails get no clickable links. Attachments are always saved as files, never opened in the page.',
         'Email text is treated as data, never as instructions. Emails that try to instruct an AI are marked Suspicious and never get automatic suggestions.',
         'The agent only does what you queue and execute. Trash is recoverable in Gmail for 30 days; starred mail is never bulk-trashed.',
         'This page talks only to api.github.com. No analytics, no other servers.'),
@@ -1113,6 +1462,7 @@ function viewGuide() {
       ul(h('span', {}, h('strong', { text: '"GitHub rejected the token": ' }), 'create a new fine-grained token and connect again.'),
         h('span', {}, h('strong', { text: '"Google refused the saved sign-in": ' }), 'run setup_oauth.py again for that account and update MAILEAN_ACCOUNTS. If it happens every 7 days, set the OAuth app to "In production".'),
         h('span', {}, h('strong', { text: '"No inbox data yet": ' }), 'open Activity and press "Run sync now". The first sync takes about two minutes.'),
+        h('span', {}, h('strong', { text: '"The full text of this email is not saved yet": ' }), 'it arrived after the last sync. Run a sync, or use "Open in Gmail".'),
         h('span', {}, h('strong', { text: 'Execution waits a long time: ' }), 'GitHub sometimes queues runs for a few minutes. The queue keeps waiting up to 15 minutes; your items stay queued if it gives up.'))));
 }
 

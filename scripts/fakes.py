@@ -6,8 +6,15 @@ for the few search terms Mailean uses. All data is made up.
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import format_datetime
+
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
 @dataclass
@@ -21,6 +28,14 @@ class FakeMessage:
     labels: list[str] = field(default_factory=lambda: ["INBOX", "UNREAD"])
     unsubscribe: str = ""
     unsubscribe_post: str = ""
+    body: str = ""                      # text/plain part
+    html: str = ""                      # text/html part
+    attachments: list = field(default_factory=list)  # [(name, mime, bytes)]
+    to: str = "me@example.test"
+
+    @property
+    def message_id(self) -> str:
+        return f"<{self.id}@mail.example.test>"
 
 
 class FakeGmail:
@@ -30,6 +45,7 @@ class FakeGmail:
         self.label_ids = {"inbox": "INBOX", "starred": "STARRED", "unread": "UNREAD"}
         self.calls: list[tuple] = []
         self.fail_ids: set[str] = set()
+        self.attachment_store: dict[str, bytes] = {}
 
     # --- read
     def profile(self) -> dict:
@@ -56,16 +72,49 @@ class FakeGmail:
         hits.sort(key=lambda m: (m.internal_ms, m.id), reverse=True)
         return [(m.id, m.thread_id) for m in hits[:limit]]
 
-    def get_metadata(self, message_id: str, extra_headers=()) -> dict:
-        self.calls.append(("get", message_id))
-        m = self.messages[message_id]
-        headers = [{"name": "From", "value": m.sender}, {"name": "Subject", "value": m.subject}]
+    def _headers(self, m: FakeMessage) -> list[dict]:
+        headers = [{"name": "From", "value": m.sender}, {"name": "To", "value": m.to},
+                   {"name": "Subject", "value": m.subject}, {"name": "Message-ID", "value": m.message_id},
+                   {"name": "Date", "value": format_datetime(datetime.fromtimestamp(m.internal_ms / 1000, tz=timezone.utc))}]
         if m.unsubscribe:
             headers.append({"name": "List-Unsubscribe", "value": m.unsubscribe})
         if m.unsubscribe_post:
             headers.append({"name": "List-Unsubscribe-Post", "value": m.unsubscribe_post})
+        return headers
+
+    def get_metadata(self, message_id: str, extra_headers=()) -> dict:
+        self.calls.append(("get", message_id))
+        m = self.messages[message_id]
         return {"id": m.id, "threadId": m.thread_id, "labelIds": list(m.labels), "snippet": m.snippet,
-                "internalDate": str(m.internal_ms), "payload": {"headers": headers}}
+                "internalDate": str(m.internal_ms), "payload": {"headers": self._headers(m)}}
+
+    def get_full(self, message_id: str) -> dict:
+        """multipart/mixed [ multipart/alternative [plain, html], attachments… ], like Gmail."""
+        self.calls.append(("get_full", message_id))
+        m = self.messages[message_id]
+        alt = []
+        if m.body:
+            alt.append({"mimeType": "text/plain", "filename": "",
+                        "headers": [{"name": "Content-Type", "value": "text/plain; charset=UTF-8"}],
+                        "body": {"size": len(m.body.encode()), "data": b64url(m.body.encode())}})
+        if m.html:
+            alt.append({"mimeType": "text/html", "filename": "",
+                        "headers": [{"name": "Content-Type", "value": "text/html; charset=UTF-8"}],
+                        "body": {"size": len(m.html.encode()), "data": b64url(m.html.encode())}})
+        parts = [{"mimeType": "multipart/alternative", "filename": "", "body": {"size": 0}, "parts": alt}]
+        for i, (name, mime, data) in enumerate(m.attachments):
+            aid = f"ATT{message_id}{i}-_x"
+            self.attachment_store[aid] = data
+            parts.append({"mimeType": mime, "filename": name,
+                          "headers": [{"name": "Content-Disposition", "value": f'attachment; filename="{name}"'}],
+                          "body": {"size": len(data), "attachmentId": aid}})
+        payload = {"mimeType": "multipart/mixed", "filename": "", "headers": self._headers(m), "body": {"size": 0}, "parts": parts}
+        return {"id": m.id, "threadId": m.thread_id, "labelIds": list(m.labels), "snippet": m.snippet,
+                "internalDate": str(m.internal_ms), "payload": payload}
+
+    def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        self.calls.append(("attachment", message_id, attachment_id))
+        return self.attachment_store[attachment_id]
 
     # --- write
     def batch_modify(self, ids, add=None, remove=None) -> int:
