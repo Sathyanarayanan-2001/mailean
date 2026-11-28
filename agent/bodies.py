@@ -279,6 +279,23 @@ class BodyStore:
         data = self.sealer.seal_json(body) if self.sealer else body
         path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
 
+    def seal_plain(self) -> int:
+        """Encrypt texts saved before a passphrase was set. Uses no Gmail calls."""
+        from .state import ENC_TAG
+
+        if not self.sealer or not self.root.exists():
+            return 0
+        sealed = 0
+        for f in self.root.glob("*/*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(data, dict) and data.get("enc") != ENC_TAG:
+                f.write_text(json.dumps(self.sealer.seal_json(data), separators=(",", ":")) + "\n", encoding="utf-8")
+                sealed += 1
+        return sealed
+
     def prune(self, keep: dict[str, set[str]]) -> int:
         """Delete text files of messages no longer in the inbox, for accounts listed in keep."""
         removed = 0

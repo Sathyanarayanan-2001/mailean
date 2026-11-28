@@ -13,6 +13,12 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | 1.0.3 | 28/11/2026 | Sathyanarayanan, with Claude | Plain-language Gmail API errors, starting with "Gmail API is turned off". |
 | 1.1.0 | 28/11/2026 | Sathyanarayanan, with Claude | Email reader: full text, conversation, attachments, Open in Gmail. |
 | 1.1.1 | 28/11/2026 | Sathyanarayanan, with Claude | Gmail quota fix: the first text sync hit Gmail's rate limit. |
+| 1.1.2 | 28/11/2026 | Sathyanarayanan, with Claude | Texts saved before a passphrase was set are encrypted at the next sync. |
+
+## 1.1.2 - 28/11/2026
+
+### Fixed
+- Setting `MAILEAN_STATE_PASSPHRASE` after texts were saved left those texts unencrypted until their emails left the inbox. The next sync now encrypts them in place, without downloading anything from Gmail again.
 
 ## 1.1.1 - 28/11/2026
 
