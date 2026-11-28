@@ -25,7 +25,7 @@
     <article class="page narrow doc">
       <header class="page-head">
         <h1>Privacy policy</h1>
-        <p class="muted">Mailean · version 1.0.1 · effective 28/11/2026</p>
+        <p class="muted">Mailean · version 1.1.0 · effective 28/11/2026</p>
       </header>
 
       <section class="card stack" aria-labelledby="p-what">
@@ -40,9 +40,11 @@
           <li>message and thread ids, labels, and the date received;</li>
           <li>the sender's name and address, and the subject line;</li>
           <li>the short preview text (snippet) that Gmail provides, up to 300 characters;</li>
-          <li>the List-Unsubscribe header, when a sender provides one.</li>
+          <li>the List-Unsubscribe header, when a sender provides one;</li>
+          <li>the text of the message, the To and Cc addresses, the Message-ID header, and the names, types and sizes of its attachments, so the owner can read the email on the dashboard before deciding what to do with it;</li>
+          <li>the attachment files of one email, only when the owner presses <em>Fetch attachments</em> for that email.</li>
         </ul>
-        <p>Mailean never reads full message bodies or attachments. It never sends email, and it never deletes mail permanently: "Trash" uses Gmail's own Trash, which Gmail keeps for 30 days.</p>
+        <p>Mailean never sends email, and it never deletes mail permanently: "Trash" uses Gmail's own Trash, which Gmail keeps for 30 days.</p>
       </section>
 
       <section class="card stack" aria-labelledby="p-use">
@@ -50,6 +52,7 @@
         <ul class="bullets">
           <li>To group each conversation, write a one-line summary, and suggest an action for the owner to review.</li>
           <li>To show counts and charts on the owner's own dashboard.</li>
+          <li>To let the owner read an email and download its attachments on the dashboard.</li>
           <li>To apply only the actions the owner queues and confirms.</li>
         </ul>
         <p>Mailean does not use Google user data for advertising, does not sell it, and does not use it to develop, improve or train generalised AI or machine-learning models.</p>
@@ -58,7 +61,7 @@
       <section class="card stack" aria-labelledby="p-share">
         <h2 id="p-share">Who else processes it</h2>
         <ul class="bullets">
-          <li><strong>Anthropic (Claude API):</strong> receives the sender, subject, labels and snippet of new messages, only to classify and summarise them for the owner. Anthropic's commercial terms govern how it handles these requests.</li>
+          <li><strong>Anthropic (Claude API):</strong> receives the sender, subject, labels and snippet of new messages, only to classify and summarise them for the owner. It never receives the full text or the attachments. Anthropic's commercial terms govern how it handles these requests.</li>
           <li><strong>GitHub:</strong> runs the agent in the owner's private repository and stores the results there. GitHub Pages serves this website.</li>
         </ul>
         <p>No other party receives Google user data. Nobody reads it by hand except the owner.</p>
@@ -69,7 +72,11 @@
         <ul class="bullets">
           <li><strong>Sign-in keys</strong> (OAuth refresh tokens) are stored as encrypted secrets in the owner's private GitHub repository.</li>
           <li><strong>Triage results</strong> (ids, sender, subject, date, group, summary, suggested action) are stored in that private repository on one branch. Each sync replaces the branch, so older results are not kept in its history. Snippets are not stored unless the owner turns that on. Numbers that look like one-time codes are masked.</li>
-          <li><strong>On the owner's devices,</strong> the dashboard keeps the last loaded results so it works offline. Clearing site data, or <em>Settings → Clear cached inbox</em>, removes them.</li>
+          <li><strong>Email text</strong> (up to 20,000 characters per email, with numbers that look like one-time codes masked) is stored in the same private repository, only while the email is in the inbox. The next sync after an email leaves the inbox deletes its text. The owner can turn this off; the next sync then deletes all stored texts.</li>
+          <li><strong>Attachment files</strong> are copied into the private repository only when the owner asks, and deleted after 7 days, or sooner when the email leaves the inbox.</li>
+          <li>When the owner sets a passphrase, the results, the email text and the attachment files are all encrypted (AES-256-GCM) before they are stored.</li>
+          <li>Deleted texts and files leave the branch's history at the next sync. GitHub decides when it removes replaced versions from its own servers.</li>
+          <li><strong>On the owner's devices,</strong> the dashboard keeps the last loaded results, and the email texts the owner opened, so it works offline. Encrypted texts stay encrypted there. Downloaded attachments are saved where the owner chooses. Clearing site data, or <em>Settings → Clear cached inbox</em>, removes the cached results and texts.</li>
         </ul>
       </section>
 

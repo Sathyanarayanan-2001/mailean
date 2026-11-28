@@ -45,20 +45,23 @@ jobs:
       - name: Check out the state branch
         run: python -m agent.publish checkout state
       - name: Execute commands
+        id: exec
         # The payload reaches Python through an environment variable, never through
         # the shell command line, so its text can never run as a command.
         env:
           COMMANDS_PAYLOAD: ${{ inputs.commands_payload || toJSON(github.event.client_payload) }}
           MAILEAN_ACCOUNTS: ${{ secrets.MAILEAN_ACCOUNTS }}
+          MAILEAN_STATE_PASSPHRASE: ${{ secrets.MAILEAN_STATE_PASSPHRASE }}
           MAILEAN_STATE_DIR: state
         run: python -m agent.execute_commands
-      - name: Publish the audit record
-        if: ${{ !cancelled() && hashFiles('state/audit/**/*.json') != '' }}
+      - name: Publish the audit record and any fetched attachments
+        if: ${{ !cancelled() && (hashFiles('state/audit/**/*.json') != '' || hashFiles('state/files/**') != '') }}
         env:
           BATCH_ID: ${{ inputs.batch_id || github.event.client_payload.batch_id }}
         run: python -m agent.publish append state "commands ${BATCH_ID}"
       - name: Start a fresh sync
-        if: ${{ !cancelled() }}
+        # Not needed when the run only fetched attachments: Gmail did not change.
+        if: ${{ !cancelled() && steps.exec.outputs.needs_sync != 'false' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run scheduled-triage.yml --ref "${GITHUB_REF_NAME}"

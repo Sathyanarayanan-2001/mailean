@@ -11,6 +11,25 @@ All notable changes are listed here. Dates are day first. Versions follow semant
 | 1.0.1 | 28/11/2026 | Sathyanarayanan, with Claude | Privacy policy page, so the Google OAuth app can be published. |
 | 1.0.2 | 28/11/2026 | Sathyanarayanan, with Claude | Private repository setup fixes: push with git, safer CI and publish steps. |
 | 1.0.3 | 28/11/2026 | Sathyanarayanan, with Claude | Plain-language Gmail API errors, starting with "Gmail API is turned off". |
+| 1.1.0 | 28/11/2026 | Sathyanarayanan, with Claude | Email reader: full text, conversation, attachments, Open in Gmail. |
+
+## 1.1.0 - 28/11/2026
+
+### Added
+- **Email reader.** Click a subject in Inbox to read the whole email: text, sender, recipients, date, the earlier messages of the conversation, and the attachment list. Previous and Next buttons (and the arrow keys) move through the list. Archive, Trash, Move, Read and Star queue the action and move to the next email. On phones the reader fills the screen.
+- **Fetch attachments.** A new command, `fetch_attachments`, has the agent copy one email's files into the private repository. The dashboard downloads them as files. Limits: 15 MB per file, 25 MB per email, 5 emails per run. Files are deleted after 7 days.
+- **Open in Gmail** (search by Message-ID) and **Copy Gmail search** for the Gmail phone app.
+- Rows show a paperclip with the number of attachments.
+- The sync saves the text of each new inbox email (`bodies/`), cleaned and capped at 20,000 characters, with codes masked. Variable `MAILEAN_STORE_BODIES=0` turns it off.
+
+### Changed
+- Encryption derives the key once per run (one salt, a random IV per file), so hundreds of encrypted texts stay fast to write and read.
+- The command workflow skips the follow-up sync after a run that only fetched attachments.
+- Privacy policy, README, SETUP, ARCHITECTURE and SECURITY describe the stored text and files.
+
+### Security
+- Email text is never rendered as HTML. Links show their real address; suspicious emails get no clickable links. Downloads never open in the page.
+
 
 ## 1.0.3 - 28/11/2026
 

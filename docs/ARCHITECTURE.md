@@ -56,8 +56,10 @@ Two jobs can write the state branch: a sync and a command run.
     "group": "receipts_finance", "priority": 3, "summary": "Card debit of ₹2,499.00",
     "suggested_action": "move_to_label", "suggested_label": "Receipts",
     "amount_paise": 249900, "currency": "INR", "reference": "627153940211",
-    "suspicious": false, "source": "llm"
+    "suspicious": false, "source": "llm",
+    "message_id_header": "<CAF1x@mail.example.test>", "attachments": 1, "has_body": true
   }],
+  "bodies": {"stored": true, "encrypted": false, "max_chars": 20000},
   "cleanup": [{"account": "account_1", "sender_email": "offers@shop.test", "count": 18, "oldest": "…", "max_age_days": 64, "group": "promotions_spam", "message_ids": ["…"], "unsubscribe": {"message_id": "…", "one_click": true, "url": "…"}}],
   "audit": [{"batch_id": "b-20261125-183000-x1y2z3", "status": "ok", "summary": {"requested": 24, "succeeded": 24, "failed": 0, "manual": 0}}]
 }
@@ -66,6 +68,25 @@ Two jobs can write the state branch: a sync and a command run.
 - One row per **conversation**: the newest message represents it, and `message_ids` lists every inbox message of that thread. An action covers all of them, as Gmail's own UI does.
 - Money is stored only as integer **paise** (`amount_paise`). References stay text.
 - Snippets are present only when `MAILEAN_STORE_SNIPPETS=1`.
+- `attachments` counts files across the whole conversation. `message_id_header` belongs to the newest message and feeds the Gmail search `rfc822msgid:`.
+
+### Saved email text: `bodies/<account>/<message id>.json`
+
+```json
+{"id": "18c2f3a4b5d6e7f8", "from": "Asha Example <asha@acme.test>", "to": "me@example.test", "cc": "",
+ "subject": "Can you review the turbine report by Friday?", "date": "Wed, 25 Nov 2026 14:20:00 +0000",
+ "text": "Hi,\n\nCould you go through section 4 …", "format": "plain", "truncated": false,
+ "attachments": [{"name": "turbine-report-draft.pdf", "mime": "application/pdf", "size": 48213}]}
+```
+
+- Written by the sync for each new inbox message (`messages.get format=full`), once. Later syncs fetch only metadata for it.
+- The plain-text part wins. Without one, the HTML part becomes text: scripts, styles and hidden parts are dropped, links keep their address, images become `[alt text]`. Control and bidi characters are removed. Codes are masked line by line. The text stops at 20,000 characters.
+- With a passphrase, each file is an AES-256-GCM envelope. One salt per run, one random IV per file, so the browser derives the key once.
+- Pruned each sync to the messages still fetched. `MAILEAN_STORE_BODIES=0` removes them all.
+
+### Fetched attachments: `files/<account>/<message id>/`
+
+`manifest.json` lists `{name, mime, size, file, encrypted}` per file, or `{name, mime, size, skipped}` with the reason. Files are named `NN-<safe name>`, plus `.enc.json` when encrypted. Limits: 15 MB per file, 25 MB per message, 5 messages per run. The next sync deletes a folder after 7 days, or when its message has left the inbox.
 
 ### Command payload (workflow input `commands_payload`)
 
@@ -74,7 +95,8 @@ Two jobs can write the state branch: a sync and a command run.
   {"account": "account_1", "op": "archive", "ids": ["18c2f3a4b5d6e7f8"]},
   {"account": "account_1", "op": "move_to_label", "ids": ["18c2…"], "label": "Finance/Receipts"},
   {"account": "account_2", "op": "bulk_trash_sender", "sender": "offers@shop.test"},
-  {"account": "account_1", "op": "unsubscribe", "ids": ["18c2…"]}
+  {"account": "account_1", "op": "unsubscribe", "ids": ["18c2…"]},
+  {"account": "account_1", "op": "fetch_attachments", "ids": ["18c2…"]}
 ]}
 ```
 
@@ -86,11 +108,14 @@ Two jobs can write the state branch: a sync and a command run.
 | `move_to_label` | `labels.create` if missing, then `batchModify` add label and remove `INBOX` |
 | `delete` | `messages.trash` per id (recoverable for 30 days) |
 | `bulk_trash_sender` | `messages.list q=from:"addr" -in:trash -is:starred` (up to 1,000), then `messages.trash` |
+| `fetch_attachments` | `messages.get format=full`, then `attachments.get` per file. Writes `files/…` and the manifest. Does not start a sync. |
 | `unsubscribe` | Reads `List-Unsubscribe` fresh from Gmail. Sends an RFC 8058 one-click `POST` only to a public `https` host, with no redirects. Otherwise reports "manual". |
 
-Limits: 65,000 characters, 200 commands and 5,000 ids per run, and 50 unsubscribes per command. The dashboard splits larger queues into several runs and sends them one after another.
+Limits: 65,000 characters, 200 commands and 5,000 ids per run, 50 unsubscribes per command, and 5 messages per `fetch_attachments`. The dashboard splits larger queues into several runs and sends them one after another.
 
 ### Browser records (synced between devices)
+
+The reader caches each opened text in IndexedDB under `body:<account>:<id>`, exactly as GitHub served it, so an encrypted text stays encrypted at rest; the decrypted copy lives in memory only. A fresh inbox state prunes texts of emails no longer listed.
 
 Each record is `{u: <ms>, v: …}`; a deletion is the tombstone `{d: 1, u}`. Keys: `q:<conversation key>` (queued action), `q:sender:<account>:<email>`, `l:<label>` (saved label), `h:<conversation key>` (acted on, hidden until the next sync), `b:<batch id>` (execution history).
 

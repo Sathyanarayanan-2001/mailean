@@ -38,35 +38,53 @@ def _derive_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
     return kdf.derive(passphrase.encode("utf-8"))
 
 
+class Sealer:
+    """Encrypts many files with one derived key.
+
+    Key derivation is deliberately slow (600,000 PBKDF2 rounds). Bodies and
+    attachments add hundreds of files per sync, so the key is derived once per
+    run with one salt, and every file gets its own random IV. The browser caches
+    the key per salt, so it also derives it only once.
+    """
+
+    def __init__(self, passphrase: str, salt: bytes | None = None):
+        self.salt = salt or os.urandom(16)
+        self.key = _derive_key(passphrase, self.salt, PBKDF2_ITERATIONS)
+
+    def seal_bytes(self, plaintext: bytes, iv: bytes | None = None) -> dict:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        iv = iv or os.urandom(12)
+        ct = AESGCM(self.key).encrypt(iv, plaintext, ENC_TAG.encode("ascii"))
+        b64 = lambda b: base64.b64encode(b).decode("ascii")  # noqa: E731
+        return {"enc": ENC_TAG, "kdf": "pbkdf2-sha256", "iter": PBKDF2_ITERATIONS,
+                "salt": b64(self.salt), "iv": b64(iv), "ct": b64(ct)}
+
+    def seal_json(self, obj: Any, iv: bytes | None = None) -> dict:
+        return self.seal_bytes(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), iv)
+
+
 def encrypt_json(obj: Any, passphrase: str, *, salt: bytes | None = None, iv: bytes | None = None) -> dict:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    salt = salt or os.urandom(16)
-    iv = iv or os.urandom(12)
-    key = _derive_key(passphrase, salt, PBKDF2_ITERATIONS)
-    plaintext = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    ct = AESGCM(key).encrypt(iv, plaintext, ENC_TAG.encode("ascii"))
-    b64 = lambda b: base64.b64encode(b).decode("ascii")  # noqa: E731
-    return {"enc": ENC_TAG, "kdf": "pbkdf2-sha256", "iter": PBKDF2_ITERATIONS, "salt": b64(salt), "iv": b64(iv), "ct": b64(ct)}
+    return Sealer(passphrase, salt).seal_json(obj, iv)
 
 
-def decrypt_json(blob: dict, passphrase: str) -> Any:
+def decrypt_bytes(blob: dict, passphrase: str) -> bytes:
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     try:
-        salt = base64.b64decode(blob["salt"])
-        iv = base64.b64decode(blob["iv"])
-        ct = base64.b64decode(blob["ct"])
+        salt, iv, ct = (base64.b64decode(blob[k]) for k in ("salt", "iv", "ct"))
         iterations = int(blob.get("iter", PBKDF2_ITERATIONS))
     except (KeyError, ValueError, TypeError):
-        raise StateError("The encrypted state file is damaged.") from None
-    key = _derive_key(passphrase, salt, iterations)
+        raise StateError("An encrypted file is damaged.") from None
     try:
-        plain = AESGCM(key).decrypt(iv, ct, ENC_TAG.encode("ascii"))
+        return AESGCM(_derive_key(passphrase, salt, iterations)).decrypt(iv, ct, ENC_TAG.encode("ascii"))
     except InvalidTag:
-        raise StateError("Wrong MAILEAN_STATE_PASSPHRASE: the state file could not be decrypted.") from None
-    return json.loads(plain.decode("utf-8"))
+        raise StateError("Wrong MAILEAN_STATE_PASSPHRASE: a file could not be decrypted.") from None
+
+
+def decrypt_json(blob: dict, passphrase: str) -> Any:
+    return json.loads(decrypt_bytes(blob, passphrase).decode("utf-8"))
 
 
 def atomic_write_text(path: Path, text: str) -> None:

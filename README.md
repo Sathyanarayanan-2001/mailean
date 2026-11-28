@@ -1,6 +1,6 @@
 # Mailean: inbox zero, minus the busywork
 
-Version 1.0.0 · 26/11/2026 · MIT licence
+Version 1.1.0 · 28/11/2026 · MIT licence
 
 Mailean sorts every Gmail account you own into six clear groups. You act on hundreds of emails at once from one dashboard, on your laptop or phone.
 
@@ -17,6 +17,7 @@ All screenshots use the made-up demo inbox.
 ## What it does
 
 - **Triage.** Every 4 hours a GitHub Actions job reads new inbox metadata from each Gmail account. Claude (`claude-sonnet-5-5`, structured outputs) places each conversation in one of six groups: Action Required, Awaiting Reply, Receipts & Finance, Newsletters & Reading, Promotions & Spam, Low Priority / Archive. It also writes a one-line summary, a priority from 1 to 5 and a suggested action.
+- **Read before you act.** Click a subject to open the email: its full text, sender and recipients, the whole conversation, and the list of attachments. Step to the previous or next email, and archive, trash, label, mark read or star from there. **Fetch attachments** has the agent copy that email's files into your private repository, and you download them on the dashboard. **Open in Gmail** jumps to the same email in Gmail.
 - **Act in bulk.** Tick conversations, or accept Claude's suggestions, and queue Archive, Trash, Move to label, Mark read, Star, Unsubscribe or Trash all from sender. Press **Execute via agent**. A second workflow applies the actions to Gmail and reports back.
 - **Dashboard.** Counts by group, ISO week (CW48), account and priority, plus receipts per month in the financial year (FY 2026-27). Every chart has a Table view.
 - **Cleanup.** Noisy senders are listed with counts and the age of their oldest message.
@@ -31,7 +32,7 @@ All screenshots use the made-up demo inbox.
                                                                ▼
  Private repo "gmail-command-center"  ── Actions ──►  agent/sync_inbox.py ──► Claude API
    │  secrets: MAILEAN_ACCOUNTS, ANTHROPIC_API_KEY             │
-   │  branch mailean-state: inbox.json, audit/*.json  ◄────────┘
+   │  branch mailean-state: inbox.json, bodies/, files/, audit/  ◄─┘
    │                                                   agent/execute_commands.py ◄── run-commands.yml
    ▼                                                                                   ▲
  GitHub REST API (your fine-grained token, stored in your browser only)                │
@@ -45,10 +46,12 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, data shapes an
 
 - Email data lives only in **your private repository**, on the `mailean-state` branch. Each sync replaces that branch with a single commit, so old subjects do not pile up in git history.
 - The public dashboard repository holds code only. The page asks for your token. It refuses to load data from a repository that is public.
-- Only the sender, subject, labels and a 300-character snippet go to Claude, never full bodies. Snippets are **not** stored unless you opt in. Digits that look like one-time codes are masked.
+- Only the sender, subject, labels and a 300-character snippet go to Claude, never the full text or attachments. Digits that look like one-time codes are masked.
+- The text of each inbox email is saved in your private repository so you can read it on the dashboard. It is deleted at the next sync after the email leaves the inbox. Set the variable `MAILEAN_STORE_BODIES` to `0` to turn this off.
+- Attachments are copied only when you press **Fetch attachments**, and deleted after 7 days. Downloads are always saved as files, never opened in the page.
 - Email text is treated as untrusted data. Claude only labels and summarises. Only actions **you** queue are ever executed.
 - The page talks only to `api.github.com`. There are no analytics, no other servers and no third-party scripts (Content Security Policy enforced).
-- Optional: set `MAILEAN_STATE_PASSPHRASE` to encrypt the state file (AES-256-GCM).
+- Optional, and recommended now that email text is stored: set `MAILEAN_STATE_PASSPHRASE` to encrypt the state file, the email texts and the attachments (AES-256-GCM).
 
 Read [SECURITY.md](SECURITY.md) for the threat model.
 

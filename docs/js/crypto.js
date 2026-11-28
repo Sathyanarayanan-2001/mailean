@@ -28,6 +28,18 @@ async function deriveKey(passphrase, salt, iterations) {
   return key;
 }
 
+export async function decryptBytes(blob, passphrase) {
+  if (!isEncrypted(blob)) throw new Error('Not an encrypted Mailean file.');
+  if (!passphrase) throw new Error('This file is encrypted. Enter the passphrase in Settings.');
+  const key = await deriveKey(passphrase, blob.salt, Number(blob.iter) || 600000);
+  try {
+    return new Uint8Array(await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: b64(blob.iv), additionalData: new TextEncoder().encode(ENC_TAG) }, key, b64(blob.ct)));
+  } catch {
+    throw new Error('Wrong passphrase: the file could not be decrypted. Check it matches MAILEAN_STATE_PASSPHRASE.');
+  }
+}
+
 export async function decryptState(blob, passphrase) {
   if (!isEncrypted(blob)) throw new Error('Not an encrypted Mailean state file.');
   if (!passphrase) throw new Error('This state file is encrypted. Enter the passphrase in Settings.');

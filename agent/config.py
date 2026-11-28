@@ -59,6 +59,7 @@ class Settings:
     state_passphrase: str | None
     state_dir: Path
     store_snippets: bool = False
+    store_bodies: bool = True
 
     @property
     def state_file(self) -> Path:
@@ -160,4 +161,6 @@ def load_settings(require_accounts: bool = True) -> Settings:
         # Snippets often hold one-time codes and private text, so they stay out of
         # the repository unless the owner opts in.
         store_snippets=os.environ.get("MAILEAN_STORE_SNIPPETS", "").strip() == "1",
+        # Full text lets the owner read an email before deciding; set 0 to keep only metadata.
+        store_bodies=os.environ.get("MAILEAN_STORE_BODIES", "").strip() != "0",
     )

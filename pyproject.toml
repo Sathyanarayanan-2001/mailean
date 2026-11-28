@@ -1,6 +1,6 @@
 [project]
 name = "mailean"
-version = "1.0.3"
+version = "1.1.0"
 description = "Multi-account Gmail triage on GitHub Actions with a GitHub Pages dashboard"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -20,12 +20,13 @@ if __package__ in (None, ""):  # allow "python agent/sync_inbox.py" as well as "
     __package__ = "agent"
 
 from agent import VERSION
+from agent.bodies import BODY_MAX_CHARS, BodyStore, FileStore, extract, message_id_header
 from agent.classify import ClassifyReport, EmailInput, Triage, classify_all, make_client
 from agent.config import GROUPS, Account, ConfigError, Settings, load_settings
 from agent.gmail import AuthError, Gmail, explain_api_error, headers_of, refresh_access_token
 from agent.http import HttpError
 from agent.sanitize import clean_text, parse_from_header, redact_codes
-from agent.state import SCHEMA, StateError, read_state, recent_audit, write_state
+from agent.state import SCHEMA, Sealer, StateError, read_state, recent_audit, write_state
 
 FETCH_WORKERS = 6
 CLEANUP_MIN_COUNT = 3
@@ -67,15 +68,29 @@ def parse_unsubscribe(hdrs: dict[str, str]) -> dict[str, Any] | None:
     return {"one_click": one_click, "url": url, "mailto": mailto}
 
 
-def fetch_account(gmail: Gmail, query: str, limit: int, now: datetime) -> list[dict]:
-    """Metadata for up to `limit` messages, fetched in parallel under the quota pacer."""
+def fetch_account(gmail: Gmail, query: str, limit: int, now: datetime, *, account: str = "",
+                  bodies: BodyStore | None = None, known: dict[str, int] | None = None) -> list[dict]:
+    """Metadata for up to `limit` messages, fetched in parallel under the quota pacer.
+
+    With a BodyStore, a message seen for the first time is fetched in full (same
+    quota cost) and its text saved; messages already saved are fetched as metadata
+    only. `known` maps message id -> attachment count from the previous run.
+    """
     pairs = gmail.list_message_ids(query, limit)
     out: list[dict] = []
+    known = known or {}
 
     def one(pair: tuple[str, str]) -> dict | None:
         mid, tid = pair
+        attachments = known.get(mid)
         try:
-            msg = gmail.get_metadata(mid)
+            if bodies is not None and (mid not in known or not bodies.has(account, mid)):
+                msg = gmail.get_full(mid)
+                body = extract(msg, fetch_attachment=lambda aid: gmail.get_attachment(mid, aid))
+                bodies.put(account, mid, body)
+                attachments = len(body["attachments"])
+            else:
+                msg = gmail.get_metadata(mid)
         except HttpError as exc:
             if exc.status == 404:  # deleted between list and get
                 return None
@@ -97,6 +112,9 @@ def fetch_account(gmail: Gmail, query: str, limit: int, now: datetime) -> list[d
             "unread": "UNREAD" in labels,
             "starred": "STARRED" in labels,
             "unsubscribe": parse_unsubscribe(hdrs),
+            "message_id_header": message_id_header({k.lower(): v for k, v in hdrs.items()}),
+            "attachments": attachments,
+            "has_body": bodies is not None and attachments is not None,
         }
 
     with cf.ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
@@ -112,16 +130,18 @@ def group_threads(account_id: str, messages: list[dict]) -> list[dict]:
     for m in messages:
         row = by_thread.get(m["thread_id"])
         if row is None:
-            row = {**m, "account": account_id, "message_ids": [m["id"]]}
+            row = {**m, "account": account_id, "message_ids": [m["id"]], "attachments_total": m.get("attachments")}
             by_thread[m["thread_id"]] = row
             continue
         row["message_ids"].append(m["id"])
+        if m.get("attachments") is not None:
+            row["attachments_total"] = (row.get("attachments_total") or 0) + m["attachments"]
         row["unread"] = row["unread"] or m["unread"]
         row["starred"] = row["starred"] or m["starred"]
         if (m["date"], m["id"]) > (row["date"], row["id"]):
-            keep_ids, unread, starred = row["message_ids"], row["unread"], row["starred"]
+            keep_ids, unread, starred, total = row["message_ids"], row["unread"], row["starred"], row.get("attachments_total")
             row.update({**m, "account": account_id})
-            row.update({"message_ids": keep_ids, "unread": unread, "starred": starred})
+            row.update({"message_ids": keep_ids, "unread": unread, "starred": starred, "attachments_total": total})
     for row in by_thread.values():
         row["message_ids"].sort()
     return list(by_thread.values())
@@ -168,7 +188,7 @@ def sort_rows(rows: list[dict]) -> list[dict]:
 
 def build_state(settings: Settings, fetched: dict[str, list[dict]], account_info: list[dict],
                 previous: dict | None, classify: Callable[[list[EmailInput]], tuple[dict[str, Triage], ClassifyReport]],
-                now: datetime) -> dict:
+                now: datetime, body_index: dict[str, dict[str, int]] | None = None) -> dict:
     # Reuse earlier triage for messages we have already classified: saves API cost
     # and keeps suggestions stable between runs. Lookup is a hash map: O(1) per id.
     cache: dict[str, dict] = {}
@@ -202,8 +222,11 @@ def build_state(settings: Settings, fetched: dict[str, list[dict]], account_info
         if m.get("account") in failed:
             rows.append({**m, "stale": True})
     rows = sort_rows(rows)
+    for row in rows:
+        row["attachments"] = row.pop("attachments_total", row.get("attachments"))
     public_fields = ("key", "id", "thread_id", "account", "message_ids", "sender_name", "sender_email",
-                     "subject", "date", "age_days", "unread", "starred", "unsubscribe", *triage_fields)
+                     "subject", "date", "age_days", "unread", "starred", "unsubscribe", "message_id_header",
+                     "attachments", "has_body", *triage_fields)
     if settings.store_snippets:
         public_fields += ("snippet",)
     messages = [{f: r.get(f) for f in public_fields} | ({"stale": True} if r.get("stale") else {}) for r in rows]
@@ -224,6 +247,8 @@ def build_state(settings: Settings, fetched: dict[str, list[dict]], account_info
         "messages": messages,
         "cleanup": cleanup_candidates(messages),
         "audit": recent_audit(settings.audit_dir),
+        "bodies": {"stored": settings.store_bodies, "encrypted": bool(settings.state_passphrase), "max_chars": BODY_MAX_CHARS},
+        "body_index": body_index or {},
     }
 
 
@@ -241,6 +266,10 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
         classify = lambda emails: classify_all(emails, client, settings.model)  # noqa: E731
     fetched: dict[str, list[dict]] = {}
     info: list[dict] = []
+    sealer = Sealer(settings.state_passphrase) if settings.state_passphrase else None
+    bodies = BodyStore(settings.state_dir, sealer) if settings.store_bodies else None
+    prev_index: dict[str, dict[str, int]] = (previous or {}).get("body_index") or {}
+    body_index: dict[str, dict[str, int]] = {}
     for acct in settings.accounts:
         entry = {"id": acct.id, "label": acct.label, "email": acct.email, "fetched": 0,
                  "inbox_total": None, "error": None, "synced_at": iso(now)}
@@ -248,8 +277,11 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
             gmail = factory(acct)
             profile = gmail.profile()
             entry["email"] = clean_text(profile.get("emailAddress", acct.email), 254)
-            fetched[acct.id] = fetch_account(gmail, settings.query, settings.max_per_account, now)
+            fetched[acct.id] = fetch_account(gmail, settings.query, settings.max_per_account, now, account=acct.id,
+                                             bodies=bodies, known=prev_index.get(acct.id) or {})
             entry["fetched"] = len(fetched[acct.id])
+            if bodies is not None:
+                body_index[acct.id] = {m["id"]: m["attachments"] for m in fetched[acct.id] if m["attachments"] is not None}
         except AuthError as exc:
             entry["error"] = str(exc)
         except HttpError as exc:
@@ -260,7 +292,16 @@ def sync(settings: Settings, *, gmail_factory: Callable[[Account], Gmail] | None
             if prev_acct:
                 entry["synced_at"] = prev_acct.get("synced_at")
         info.append(entry)
-    state = build_state(settings, fetched, info, previous, classify, now)
+        if entry["error"] and acct.id in prev_index:
+            body_index[acct.id] = prev_index[acct.id]  # keep a failed account's saved texts for next time
+    # Keep texts and fetched files only for messages still in the inbox.
+    keep = {a: {m["id"] for m in msgs} for a, msgs in fetched.items()}
+    if bodies is not None:
+        bodies.prune(keep)
+    else:
+        BodyStore(settings.state_dir).prune({a.id: set() for a in settings.accounts})
+    FileStore(settings.state_dir).prune(keep, now)
+    state = build_state(settings, fetched, info, previous, classify, now, body_index)
     write_state(settings.state_file, state, settings.state_passphrase)
     c = state["classifier"]
     print(f"Wrote {len(state['messages'])} conversations from {len(info)} account(s); "

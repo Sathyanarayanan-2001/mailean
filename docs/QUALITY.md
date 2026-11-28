@@ -1,6 +1,6 @@
 # Mailean quality record
 
-Version 1.0.0 · 26/11/2026
+Version 1.1.0 · 28/11/2026
 
 This file records how Mailean was built and checked: stage checkpoints, two verification rounds by two methods, performance numbers, a usability walkthrough, an FMEA, DMAIC and root-cause analyses. Every number here comes from a run in the build environment. Anything not run is marked **Not run** or **Unverified**.
 
@@ -15,6 +15,7 @@ This file records how Mailean was built and checked: stage checkpoints, two veri
 | 5 | Import and export | `exporter.js`, CSV import preview, Web Worker | Round trip and preview tests | – | Pass |
 | 6 | Documents and CI | Workflows, README, SETUP, ARCHITECTURE, SECURITY, CONTRIBUTING, CHANGELOG, LICENSE | actionlint + shellcheck, YAML parse | Live Pages URL cannot be checked before deployment | Pass |
 | 7 | Round 2, then commit | Clean-clone rerun, Lighthouse, screenshots | All suites (section 2) | See section 10 | Pass |
+| 8 | 1.1.0 reader | `agent/bodies.py`, `fetch_attachments`, `docs/js/mailtext.js`, reader in `app.js` | 94 Python, 38 JS, 21 browser tests (section 2, round 3) | "Open in Gmail" link form (section 10) | Pass |
 
 Work was done on branch `feature/v1.0.0` and merged into `main` with `--no-ff` after every test passed. There was no GitHub access from the build environment, so this was a local merge, not a GitHub pull request.
 
@@ -42,6 +43,19 @@ Work was done on branch `feature/v1.0.0` and merged into `main` with `--no-ff` a
 | Fixtures | Committed copies | Regenerated with the scripts: `git status` clean | **reproducible** |
 | First load | Lighthouse 12.8.2, mobile, run 1 | Lighthouse, run 2 | **Perf 99, A11y 100, BP 100, SEO 100; LCP 1.8 s both runs** |
 | Appearance | Screenshots reviewed by eye at 320 px dark, 390 px light, desktop dark | Automated layout tests at 320, 360 and 390 px, light and dark | **no overlaps, clipping or sideways scroll** |
+
+### Round 3 (version 1.1.0: email reader and attachments)
+
+| Check | Method A | Method B | Result |
+|---|---|---|---|
+| Agent unit tests | pytest, 94 tests (14 new: HTML to text, code masking, charsets, pruning, limits, encryption) | Fake Gmail builds real multipart messages; files checked on disk | **94 passed, 0 failed** |
+| Dashboard unit tests | node:test, 38 tests (11 new: safe links, Gmail link, sizes, field checks) | Every text the Python agent wrote for the demo passes the browser's check unchanged | **38 passed, 0 failed** |
+| Browser tests | Playwright, 21 tests (6 new) | Python encrypts texts and files with the agent's own code; the browser decrypts them; the agent's validator accepts the browser's `fetch_attachments` payload; downloaded bytes equal the originals | **21 passed, 0 failed** |
+| Gmail search form | Gmail Help search result: `rfc822msgid:200503292@example.com` | The same help page opened directly: same row, no angle brackets | **matches**; the dashboard copies that form |
+| Golden examples | Rubric scoring (rules) | – | **15/15** |
+| Workflows | actionlint | – | **clean** |
+| First load | Lighthouse, mobile, run 1: LCP 1.87 s | Run 2: LCP 1.88 s | **Perf 94, A11y 100, BP 100, SEO 100** |
+| Appearance | Reader screenshots by eye at 320 px light, 375 and 390 px dark, desktop light | Automated: reader fills a 320 and 390 px screen, no sideways scroll, targets 44 px or more; axe-core on the open reader, light and dark | **pass** after 3 fixes (section 7) |
 
 ### What the tests cover (each states input and hand-worked expected result)
 
@@ -119,8 +133,13 @@ Fixes made because of the walkthrough and screenshots: on phones the filters fil
 | 14 | Reporting | Week or FY wrong at a boundary | Misfiled period | Time zone or midnight | 4 | 3 | 1 | 12 | Zone-aware parts; 610-date oracle; edge tests |
 | 15 | Reporting | Hidden rows stay hidden after a failed run | Missing mail in view | Optimistic hide | 4 | 3 | 3 | 36 | Hide only after success; cleared on the next sync |
 | 16 | Execution | Payload too large for a workflow input | Run refused | Huge selections | 4 | 3 | 2 | 24 | Split under 60,000 characters, 5,000 ids, 200 commands; sent one by one |
+| 17 | Reader | Email HTML runs script or loads a tracking image | Privacy or security breach | Hostile email | 9 | 3 | 2 | 54 | HTML reduced to text by the agent; the page shows text nodes only; CSP blocks remote images and scripts |
+| 18 | Reader | Link text disguises the real address | Phishing click | Hostile email | 7 | 4 | 3 | 84 | Visible text is always the real URL; http(s) only; no clickable links in suspicious emails |
+| 19 | Attachments | Malicious file opened | Malware on the device | Hostile attachment | 9 | 3 | 5 | 135 | Saved as a file, never opened in the page; extra confirmation for suspicious emails; owner must scan. Remaining action: scan before opening |
+| 20 | Storage | Email text or files outlive the email | Data kept longer than needed | Missed pruning | 6 | 3 | 3 | 54 | Pruned every sync; files after 7 days; tested; optional encryption; `MAILEAN_STORE_BODIES=0` |
+| 21 | Reader | Text missing for a new email | Owner cannot review | Email arrived after the last sync | 3 | 6 | 1 | 18 | Clear note with the fix; "Open in Gmail" |
 
-The highest risks (RPN 100 and over) are #7 OTPs and #6 amounts. Both have controls. Remaining action for #6: review receipts totals against your bank before relying on them.
+The highest risks (RPN 100 and over) are #19 attachments, #7 OTPs and #6 amounts. All have controls. Remaining actions: scan downloaded files before opening them (#19); review receipts totals against your bank before relying on them (#6).
 
 ## 7. Root-cause analyses (5 Whys) for defects found during the build
 
@@ -162,6 +181,33 @@ Fix: step A18 checks the project; Gmail errors are explained in one plain senten
 
 Other issues fixed during appearance review: inbox column headers out of line with their columns; a summary that repeated the subject; filters filling the phone screen; a cluttered bulk bar; rupee axis labels overflowing the chart; grid lines under their labels; link-buttons in the wrong colour in dark mode; table-of-contents chips under 44 px; a hint that pointed to the wrong guide step; the drawer close glyph; the cleanup "Archive" label.
 
+**D5. The reader showed the word "null" above the email (1.1.0, found on the first screenshot).**
+1. Why? A text node "null" was added to the reader.
+2. Why? An optional part (the summary) was `null` when there was nothing to show.
+3. Why? It was passed to the browser's own `Element.append`, which turns `null` into text.
+4. Why? The rest of the app uses the `append` helper from `dom.js`, which skips `null`; the new code mixed the two.
+5. Why? No test looked for stray text in a new view.
+
+Fix: every reader call that can receive `null` uses the helper. Control: the browser tests read the reader's text, and screenshots are reviewed by eye.
+
+**D6. On a phone, the reader's close button was 37 px wide.**
+1. Why? The button shrank.
+2. Why? It shares a flex row with a long, wrapping title.
+3. Why? Flex items may shrink by default.
+4. Why? Earlier dialogs had short titles, so it never happened.
+5. Why? The 44 px check did not cover dialogs.
+
+Fix: the dialog close button does not shrink. Control: a new test checks every target in the open reader at 320 and 390 px.
+
+**D7. Queueing from the reader did not update the Queue count.**
+1. Why? The count stayed at 0.
+2. Why? The top bar was not redrawn.
+3. Why? Elsewhere the whole page is redrawn after staging; the reader skips that to keep its place.
+4. Why? The count lives in the top bar, which only `renderChrome` updates.
+5. Why? The reader's staging path was new and not yet tested.
+
+Fix: the reader redraws the top bar after staging. Control: the browser test checks the count.
+
 ## 8. DMAIC
 
 - **Define:** one person, several Gmail accounts, daily triage on a laptop and phone. Goal: sort and clear mail in bulk without exposing any email data.
@@ -195,7 +241,9 @@ Other issues fixed during appearance review: inbox column headers out of line wi
 
 ## 10. Known limits and unverified items
 
-- The live address https://sathyanarayanan-2001.github.io/mailean/ is **Unverified**: it exists only after you deploy.
+- The live address https://sathyanarayanan-2001.github.io/mailean/: GitHub reports each Pages deployment as successful. The page itself could not be opened from the build environment, so its content online is **Unverified**.
+- **Open in Gmail** builds `mail.google.com/mail/?authuser=<address>#search/rfc822msgid:<id>`. The search operator is documented by Gmail Help; the `authuser` parameter and the `#search/` address form are not documented there and were not tried against a real Gmail account: **Unverified**. **Copy Gmail search** uses only the documented operator.
+- Reading full messages (`format=full`) and attachments was tested with the in-memory fake. Real Gmail responses are **Not run** until your next sync.
 - The Claude path was tested with a fake client. A real API call, cost and accuracy are **Not run**.
 - The Gmail API was tested with an in-memory fake. The real OAuth flow in `setup_oauth.py` is **Not run** end to end (its URL building, PKCE and output format are tested).
 - GitHub Actions runs (scheduled triage, run commands, Pages deploy) are **Not run** on GitHub. They are linted, and their Python steps are tested locally, including git publishing against a real local remote.

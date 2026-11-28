@@ -25,11 +25,12 @@ if __package__ in (None, ""):
     __package__ = "agent"
 
 from agent import http
+from agent.bodies import ATTACHMENT_FILE_MAX, ATTACHMENT_TOTAL_MAX, FileStore, attachment_parts, b64url_decode, iso_now as _now
 from agent.commands import BULK_TRASH_CAP, Command, PayloadError, parse_payload
 from agent.config import Account, ConfigError, Settings, load_settings
 from agent.gmail import AuthError, Gmail, explain_api_error, headers_of, refresh_access_token
 from agent.http import HttpError
-from agent.state import write_audit
+from agent.state import Sealer, write_audit
 
 
 def iso_now() -> str:
@@ -80,7 +81,33 @@ def one_click_unsubscribe(gmail: Gmail, message_id: str) -> str:
     return "done"
 
 
-def run_command(gmail: Gmail, cmd: Command, label_cache: dict[str, str]) -> dict:
+def fetch_attachments(gmail: Gmail, account: str, message_id: str, files: FileStore) -> dict:
+    """Save one message's attachments for the owner to download from the dashboard.
+
+    Limits keep the private repository small: 15 MB per file, 25 MB per message.
+    Files are removed by the next sync once older than 7 days or when the
+    message leaves the inbox.
+    """
+    msg = gmail.get_full(message_id)
+    parts = attachment_parts(msg)
+    manifest = {"message_id": message_id, "account": account, "fetched_at": _now(), "files": []}
+    total = 0
+    for i, part in enumerate(parts, start=1):
+        entry = {"name": part["name"], "mime": part["mime"], "size": part["size"]}
+        if part["size"] > ATTACHMENT_FILE_MAX:
+            entry["skipped"] = "larger than 15 MB; open the email in Gmail"
+        elif total + part["size"] > ATTACHMENT_TOTAL_MAX:
+            entry["skipped"] = "over the 25 MB limit for one email; open it in Gmail"
+        else:
+            data = b64url_decode(part["inline_data"]) if part["inline_data"] else gmail.get_attachment(message_id, part["attachment_id"])
+            total += len(data)
+            entry = files.write(account, message_id, i, part["name"], part["mime"], data)
+        manifest["files"].append(entry)
+    files.write_manifest(account, message_id, manifest)
+    return manifest
+
+
+def run_command(gmail: Gmail, cmd: Command, label_cache: dict[str, str], files: FileStore | None = None) -> dict:
     result = {"account": cmd.account, "op": cmd.op, "requested": len(cmd.ids), "succeeded": 0,
               "failed": 0, "manual": 0, "errors": []}
     if cmd.label:
@@ -131,6 +158,17 @@ def run_command(gmail: Gmail, cmd: Command, label_cache: dict[str, str]) -> dict
                     result["succeeded"] += 1
                 else:
                     fail(1, exc)
+    elif cmd.op == "fetch_attachments":
+        if files is None:
+            raise ValueError("fetch_attachments needs a FileStore")
+        for mid in cmd.ids:
+            try:
+                manifest = fetch_attachments(gmail, cmd.account, mid, files)
+                saved = sum(1 for f in manifest["files"] if "skipped" not in f)
+                result["succeeded"] += 1 if saved or not manifest["files"] else 0
+                result["manual"] += sum(1 for f in manifest["files"] if "skipped" in f)
+            except HttpError as exc:
+                fail(1, exc)
     elif cmd.op == "unsubscribe":
         for mid in cmd.ids:
             try:
@@ -163,6 +201,9 @@ def execute(settings: Settings, raw_payload: str, *, gmail_factory: Callable[[Ac
     factory = gmail_factory or default_factory
     clients: dict[str, Gmail | Exception] = {}
     label_caches: dict[str, dict[str, str]] = {}
+    files = None
+    if any(c.op == "fetch_attachments" for c in commands):
+        files = FileStore(settings.state_dir, Sealer(settings.state_passphrase) if settings.state_passphrase else None)
     for cmd in commands:
         if cmd.account not in clients:
             try:
@@ -179,7 +220,7 @@ def execute(settings: Settings, raw_payload: str, *, gmail_factory: Callable[[Ac
                                       "succeeded": 0, "failed": max(1, len(cmd.ids)), "manual": 0,
                                       "errors": [str(client)[:300]]})
             continue
-        record["results"].append(run_command(client, cmd, label_caches[cmd.account]))
+        record["results"].append(run_command(client, cmd, label_caches[cmd.account], files))
     totals = {k: sum(r[k] for r in record["results"]) for k in ("requested", "succeeded", "failed", "manual")}
     record["summary"] = totals
     record["status"] = "ok" if totals["failed"] == 0 else ("failed" if totals["succeeded"] == 0 else "partial")
@@ -190,6 +231,11 @@ def execute(settings: Settings, raw_payload: str, *, gmail_factory: Callable[[Ac
     return record
 
 
+def needs_sync(record: dict) -> bool:
+    """Fetching attachments changes nothing in Gmail, so no fresh sync is needed after it."""
+    return any(r.get("op") != "fetch_attachments" for r in record.get("results", []))
+
+
 def main() -> int:
     try:
         settings = load_settings()
@@ -197,6 +243,10 @@ def main() -> int:
     except (ConfigError, PayloadError) as exc:
         print(f"::error::{exc}")
         return 2
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(f"needs_sync={'true' if needs_sync(record) else 'false'}\n")
     return 0 if record["status"] == "ok" else 1
 
 

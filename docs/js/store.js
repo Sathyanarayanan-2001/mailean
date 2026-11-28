@@ -111,6 +111,28 @@ export async function kvDelete(key) {
   } catch { /* already gone */ }
 }
 
+/** Delete every key that starts with prefix, except those in keep (used for cached email texts). */
+export async function kvDeletePrefix(prefix, keep = null) {
+  const drop = (k) => String(k).startsWith(prefix) && !(keep && keep.has(k));
+  for (const k of [...memory.keys()]) if (drop(k)) memory.delete(k);
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      const store = tx.objectStore('kv');
+      const req = store.openKeyCursor(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return;
+        if (drop(c.key)) store.delete(c.key);
+        c.continue();
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { /* nothing cached */ }
+}
+
 /**
  * Synced records: queue items (q:), saved labels (l:), handled marks (h:),
  * batch history (b:). Each record is {u, v} or a tombstone {d:1, u}.

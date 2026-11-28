@@ -269,6 +269,12 @@ fieldset.radios { border: 0; padding: 0; margin: 0; display: grid; gap: 0.25rem;
 .acct-tag { color: var(--muted); }
 .cell-subject { min-width: 0; }
 .subject { overflow-wrap: anywhere; }
+/* The subject opens the reader. It looks like text but is a real button for keyboards and screen readers. */
+button.subject {
+  display: inline; background: none; border: 0; padding: 2px 0; margin: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px;
+}
+button.subject:hover { text-decoration-color: currentColor; }
 .summary { font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .cell-date { font-size: var(--fs-sm); color: var(--muted); text-align: right; }
 .cell-actions { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
@@ -356,8 +362,52 @@ dialog.wide { width: min(760px, calc(100vw - 24px)); }
 dialog::backdrop { background: rgb(15 23 42 / 45%); }
 .dlg-inner { display: grid; grid-template-rows: auto 1fr auto; max-height: min(90dvh, 900px); }
 .dlg-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 1rem 1rem 0.5rem 1.25rem; }
+.dlg-head .icon-btn { flex-shrink: 0; }
 .dlg-body { padding: 0.5rem 1.25rem 1rem; overflow-y: auto; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+/* ---------- email reader */
+dialog.reader { width: min(880px, calc(100vw - 24px)); max-height: min(94dvh, 1100px); }
+.reader .dlg-inner { grid-template-rows: auto auto minmax(0, 1fr) auto; max-height: min(94dvh, 1100px); }
+.reader-title { font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; margin: 0; }
+.reader-title:focus { outline: none; }
+.reader-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.reader-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0 1rem 0.5rem; border-bottom: 1px solid var(--border); }
+.reader-body { display: grid; gap: 0.75rem; align-content: start; }
+.reader-actions { justify-content: space-between; }
+.mail-meta { display: grid; gap: 0.25rem; margin: 0; font-size: var(--fs-sm); }
+.mail-meta div { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.5rem; }
+.mail-meta dt { color: var(--muted); }
+.mail-meta dd { margin: 0; overflow-wrap: anywhere; }
+.mail-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; padding: 0.875rem 1rem; margin: 0;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); max-width: 75ch;
+}
+.mail-text:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.msg { display: grid; gap: 0.75rem; }
+.notice { padding: 0.75rem 1rem; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); margin: 0; }
+.notice.warn { display: flex; gap: 0.5rem; align-items: flex-start; background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-border); }
+.notice p { margin: 0; }
+.h-small { font-size: var(--fs-md); margin: 0.25rem 0 0; }
+.earlier { border: 1px solid var(--border); border-radius: var(--r-md); }
+.earlier > summary { min-height: 44px; display: flex; align-items: center; padding: 0 1rem; cursor: pointer; overflow-wrap: anywhere; }
+.earlier > .msg-holder { padding: 0 1rem 1rem; }
+.attach { display: grid; gap: 0.5rem; }
+.attach-list, .download-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.375rem; }
+.attach-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.5rem; }
+.attach-name { font-weight: 500; overflow-wrap: anywhere; }
+.attach-actions { display: grid; gap: 0.5rem; justify-items: start; }
+.download-list .btn { height: auto; min-height: 36px; text-align: left; overflow-wrap: anywhere; white-space: normal; }
+@media (max-width: 640px) {
+  dialog.reader { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .reader .dlg-inner { height: 100dvh; max-height: 100dvh; }
+  .reader-actions { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+  .reader-actions { gap: 0.375rem; padding-top: 0.5rem; }
+  .reader-actions .row { width: 100%; }
+  /* Five actions side by side, icon over label, so the text keeps most of the screen. */
+  .reader-stage { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.25rem; }
+  .reader-stage .btn { flex-direction: column; gap: 2px; padding: 4px 2px; min-height: 52px; font-size: var(--fs-xs); }
+}
+
 .more-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
 .more-link { display: flex; align-items: center; gap: 0.75rem; min-height: 48px; padding: 0 0.75rem; border-radius: var(--r-md); color: var(--text) !important; text-decoration: none; font-weight: 500; }
 .more-link:hover { background: var(--surface-2); }
@@ -411,7 +461,8 @@ pre.code { margin: 0; padding: 0.75rem; border-radius: var(--r-md); background: 
   .queue-btn { display: none; }
   .toasts { bottom: calc(var(--bottomnav) + 0.75rem + env(safe-area-inset-bottom)); left: 1rem; right: 1rem; width: auto; }
   /* Touch targets at least 44 px. */
-  .btn, .btn.sm, .seg, .chip, .icon-btn, .toc a { min-height: 44px; }
+  .btn, .btn.sm, .seg, .chip, .icon-btn, .toc a, .download-list .btn { min-height: 44px; }
+  button.subject { min-height: 44px; padding: 10px 0; }
   .icon-btn { width: 44px; height: 44px; }
   .list-head { display: none; }
   /* The mail table becomes cards. */

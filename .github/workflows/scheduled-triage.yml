@@ -48,6 +48,7 @@ jobs:
           MAILEAN_QUERY: ${{ vars.MAILEAN_QUERY }}
           MAILEAN_MAX_PER_ACCOUNT: ${{ vars.MAILEAN_MAX_PER_ACCOUNT }}
           MAILEAN_STORE_SNIPPETS: ${{ vars.MAILEAN_STORE_SNIPPETS }}
+          MAILEAN_STORE_BODIES: ${{ vars.MAILEAN_STORE_BODIES }}
           MAILEAN_STATE_DIR: state
         run: python -m agent.sync_inbox
       - name: Publish state

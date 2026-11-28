@@ -56,6 +56,9 @@ export function validateState(raw) {
       amount_paise: amount, currency: amount === null ? null : str(m.currency, 8) || 'INR',
       reference: str(m.reference, 60) || null, suspicious: !!m.suspicious, source: str(m.source, 10),
       stale: !!m.stale,
+      message_id_header: /^<[^<>\s]{3,250}@[^<>\s]{1,250}>$/.test(m.message_id_header || '') ? m.message_id_header : null,
+      attachments: Number.isInteger(m.attachments) && m.attachments >= 0 ? m.attachments : null,
+      has_body: !!m.has_body,
     });
     // Lower-cased copies computed once here (O(n)) instead of inside every
     // comparison and every keystroke of the search box.
@@ -79,6 +82,7 @@ export function validateState(raw) {
   return {
     state: {
       generated_at: str(raw.generated_at, 30), demo: !!raw.demo, classifier: raw.classifier || {},
+      bodies: { stored: !!(raw.bodies && raw.bodies.stored), encrypted: !!(raw.bodies && raw.bodies.encrypted) },
       accounts, messages, cleanup, audit,
     },
     dropped,

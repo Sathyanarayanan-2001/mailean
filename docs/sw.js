@@ -2,11 +2,11 @@
 // static files are served from cache and refreshed in the background.
 // Cache names start with "mailean-" because every project on this github.io
 // account shares one origin; we only ever delete our own caches.
-const CACHE = 'mailean-v1.0.3';
+const CACHE = 'mailean-v1.1.0';
 const SHELL = [
-  './', 'index.html', 'privacy.html', 'styles.css', 'app.js', 'theme-init.js', 'manifest.webmanifest', 'demo-state.json',
+  './', 'index.html', 'privacy.html', 'styles.css', 'app.js', 'theme-init.js', 'manifest.webmanifest', 'demo-state.json', 'demo-bodies.json',
   'js/dom.js', 'js/format.js', 'js/model.js', 'js/commands.js', 'js/store.js', 'js/merge.js', 'js/sync.js',
-  'js/github.js', 'js/charts.js', 'js/csv.js', 'js/exporter.js', 'js/crypto.js', 'js/worker.js',
+  'js/github.js', 'js/charts.js', 'js/csv.js', 'js/exporter.js', 'js/crypto.js', 'js/worker.js', 'js/mailtext.js',
   'fonts/ibm-plex-sans-latin-400-normal.woff2', 'fonts/ibm-plex-sans-latin-500-normal.woff2', 'fonts/ibm-plex-sans-latin-600-normal.woff2',
   'fonts/ibm-plex-sans-latin-ext-400-normal.woff2', 'fonts/ibm-plex-sans-latin-ext-500-normal.woff2', 'fonts/ibm-plex-sans-latin-ext-600-normal.woff2',
   'icons/favicon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
